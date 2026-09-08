@@ -242,6 +242,8 @@
         padding: 4px 8px; font-size: 11px; font-weight: 700; cursor: pointer;
       }
     </style>
+    <!-- Kakao JavaScript SDK (6️⃣ 인증 & 카카오, KEONGYU-Cloudflare-Notion.md) -->
+    <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js"></script>
   </head>
   <body>
     <div id="app-frame">
@@ -257,6 +259,17 @@
     <div id="toast" class="toast-box"></div>
 
     <script>
+      // ==========================================
+      // -1. Kakao SDK Init (6️⃣ 인증 & 카카오)
+      // ==========================================
+      const KAKAO_JS_KEY = 'c9b3225b112c58a9bba266cfe150b50a';
+      if (window.Kakao && !Kakao.isInitialized()) {
+        Kakao.init(KAKAO_JS_KEY);
+      }
+      // 사용 예시 (친구 선택 → 함께가기 참여자로 추가):
+      // Kakao.Picker.selectFriends({ title: '함께 갈 친구 선택', maxPickableCount: 5 })
+      //   .then(friends => friends.users.forEach(f => addParticipant(routeId, f.displayName)));
+
       // ==========================================
       // 0. Constants & Utilities
       // ==========================================
