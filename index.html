@@ -998,6 +998,27 @@
         render();
       };
 
+      // 마이루트: 내 루트 공개/비공개 전환
+      window.togglePublic = function(routeId) {
+        const route = state.routes.find(r => r.id === routeId);
+        if (!route) return;
+        route.isPublic = !route.isPublic;
+        saveState();
+        showToast(route.isPublic ? '루트를 공개로 전환했어요 🟢' : '루트를 비공개로 전환했어요 🔒');
+        render();
+      };
+
+      // 마이루트: 내 루트 삭제
+      window.deleteMyRoute = function(routeId) {
+        const route = state.routes.find(r => r.id === routeId);
+        if (!route) return;
+        if (!confirm(`"${route.title}" 루트를 삭제할까요? 되돌릴 수 없습니다.`)) return;
+        state.routes = state.routes.filter(r => r.id !== routeId);
+        saveState();
+        showToast('루트를 삭제했어요 🗑️');
+        render();
+      };
+
       window.toggleSubscribe = function(creator) {
         if (creator === state.user.name) {
           showToast('자신은 구독할 수 없어요!');
@@ -2203,9 +2224,9 @@
                         ${r.isCollaborative ? `<span class="collab-pill">👥 함께가는 중 (${(r.participants || []).length}명)</span>` : ''}
                       </div>
                       <div style="display:flex; align-items:center; gap:8px;">
-                        <span style="font-size:11px; font-weight:700; color:${r.isPublic ? '#2DD4A0' : '#999'};">
+                        <button style="border:1px solid ${r.isPublic ? '#2DD4A0' : '#CCC'}; background:${r.isPublic ? 'rgba(45,212,160,0.1)' : '#F5F5F0'}; color:${r.isPublic ? '#1D9C77' : '#999'}; font-size:11px; font-weight:700; padding:3px 9px; border-radius:12px; cursor:pointer;" onclick="togglePublic('${r.id}')">
                           ${r.isPublic ? '🟢 공개' : '🔒 비공개'}
-                        </span>
+                        </button>
                         <span style="font-size:12px; font-weight:700; color:#FF4B6E;">❤️ ${r.likes || 0}</span>
                       </div>
                     </div>
@@ -2216,12 +2237,13 @@
                       <span class="info-pill">스텝 ${r.steps.length}개</span>
                     </div>
                     ${renderRouteThumb(r, 110)}
-                    <div style="display:flex; justify-content:space-between; align-items:center; padding-top:6px; border-top:1px solid #F0F0EE;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding-top:6px; border-top:1px solid #F0F0EE; flex-wrap:wrap; gap:6px;">
                       <button class="cta-btn" style="background:#555;" onclick="startFollowRoute('${r.id}')">미리보기</button>
-                      <div style="display:flex; gap:6px;">
+                      <div style="display:flex; gap:6px; flex-wrap:wrap;">
                         <button class="btn-secondary" onclick="openCollabSheet('${r.id}')">👥 함께가기</button>
                         <button class="cta-btn" style="background:#FFF; color:var(--text); border:1px solid var(--border);" onclick="openShareSheet('${r.id}')">공유</button>
                         <button class="cta-btn" onclick="startFollowRoute('${r.id}')">따라가기</button>
+                        <button class="cta-btn" style="background:#FFF; color:var(--danger, #FF4242); border:1px solid var(--danger, #FF4242);" onclick="deleteMyRoute('${r.id}')">삭제</button>
                       </div>
                     </div>
                   </div>
