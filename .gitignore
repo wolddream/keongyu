@@ -2,3 +2,5 @@ node_modules/
 .wrangler/
 .env
 *.log
+*.secrets.local.md
+SECRETS.local.md
