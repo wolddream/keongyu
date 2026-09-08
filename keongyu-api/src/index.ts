@@ -80,8 +80,8 @@ async function handleKakaoCallback(request: Request, env: Env): Promise<Response
 		: "https://keongyu.wolddream.workers.dev";
 	const redirectUri = `${url.origin}/oauth/kakao/callback`;
 
-	const fail = (reason: string) =>
-		Response.redirect(`${frontendOrigin}/#kakao_login=${encodeURIComponent(toBase64Utf8({ error: reason }))}`, 302);
+	const fail = (reason: string, detail?: unknown) =>
+		Response.redirect(`${frontendOrigin}/#kakao_login=${encodeURIComponent(toBase64Utf8({ error: reason, detail }))}`, 302);
 
 	if (errorParam || !code) return fail(errorParam || "no_code");
 
@@ -99,8 +99,10 @@ async function handleKakaoCallback(request: Request, env: Env): Promise<Response
 			headers: { "content-type": "application/x-www-form-urlencoded;charset=utf-8" },
 			body: tokenBody,
 		});
-		const tokenData = (await tokenRes.json()) as { access_token?: string };
-		if (!tokenData.access_token) return fail("token_exchange_failed");
+		const tokenData = (await tokenRes.json()) as { access_token?: string; error?: string; error_description?: string };
+		if (!tokenData.access_token) {
+			return fail("token_exchange_failed", { status: tokenRes.status, error: tokenData.error, description: tokenData.error_description });
+		}
 
 		const profileRes = await fetch("https://kapi.kakao.com/v2/user/me", {
 			headers: { Authorization: `Bearer ${tokenData.access_token}` },
@@ -119,8 +121,8 @@ async function handleKakaoCallback(request: Request, env: Env): Promise<Response
 			profileImage: (p as { profile_image_url?: string; profile_image?: string }).profile_image_url || (p as { profile_image?: string }).profile_image || null,
 		};
 		return Response.redirect(`${frontendOrigin}/#kakao_login=${encodeURIComponent(toBase64Utf8(payload))}`, 302);
-	} catch {
-		return fail("exchange_error");
+	} catch (err) {
+		return fail("exchange_error", (err as Error).message);
 	}
 }
 

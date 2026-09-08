@@ -405,7 +405,8 @@
           const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
           const payload = JSON.parse(new TextDecoder().decode(bytes));
           if (payload.error) {
-            showToast('카카오 로그인에 실패했어요.');
+            console.error('[카카오 로그인 실패]', payload.error, payload.detail);
+            showToast('카카오 로그인에 실패했어요. (' + payload.error + ')');
             return false;
           }
           const oldName = state.user.name;
