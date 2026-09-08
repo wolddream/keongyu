@@ -1927,6 +1927,16 @@
       // 5. Render Engine (Preserving Input UX)
       // ==========================================
       function render() {
+        // 0. IME(한글 등) 조합 중에는 절대 DOM을 재구성하지 않습니다. search-input 자신의
+        // oninput 핸들러(onSearchInput)에는 이미 이 가드가 있었지만, 그건 "검색창 스스로가
+        // render()를 유발하는 경우"만 막습니다 — 5초 후 알림 시뮬레이션, 함께가기 참여자
+        // 시뮬레이션(setTimeout) 등 검색창과 무관한 다른 코드가 조합 도중 render()를 호출하면
+        // #root 전체가 다시 그려지며 조합 세션이 끊깁니다(개별 자모가 합성되지 않고 그대로
+        // 찍히는 증상). 그래서 트리거 지점이 아니라 render() 자체에 전역 가드를 둡니다.
+        // 조합이 끝나면 onSearchCompositionEnd가 다시 render()를 호출해 최신 상태를 반영합니다.
+        const composingEl = document.activeElement;
+        if (composingEl && composingEl.dataset && composingEl.dataset.composing === 'true') return;
+
         // 1. Preserve active input focus & selection
         const activeEl = document.activeElement;
         const activeId = activeEl ? activeEl.id : null;
