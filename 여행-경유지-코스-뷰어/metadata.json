@@ -1,0 +1,6 @@
+{
+  "name": "여행 경유지 코스 뷰어",
+  "description": "도착 순서대로 번호와 장소를 지도에 표시하고, 아이콘을 선택하면 해당 경유지의 사진과 상세 정보를 보여주는 여행 코스 뷰어",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
