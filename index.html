@@ -365,7 +365,10 @@
         if (window.Kakao && Kakao.Auth && typeof Kakao.Auth.authorize === 'function') {
           Kakao.Auth.authorize({
             redirectUri: KAKAO_OAUTH_REDIRECT_URI,
-            scope: 'friends,profile_nickname,profile_image,account_email',
+            // account_email은 뺐습니다 - Kakao Developers에서 해당 동의항목을 활성화하지 않으면
+            // KOE205(잘못된 요청) 오류가 남. 콘솔에서 "카카오계정(이메일)" 동의항목을 켜면
+            // 다시 scope에 추가해도 됩니다 (email은 어차피 옵셔널로 처리되어 있음).
+            scope: 'friends,profile_nickname,profile_image',
             state: encodeURIComponent(window.location.origin)
           });
           // authorize()는 즉시 페이지를 이탈시키므로 이 함수는 여기서 끝. 로그인 결과 반영은
