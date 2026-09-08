@@ -241,6 +241,22 @@
         background: #F5F5F0; color: var(--text-sub); border: none; border-radius: 10px;
         padding: 4px 8px; font-size: 11px; font-weight: 700; cursor: pointer;
       }
+
+      /* Login system (익명 / 카카오 / 이메일 코드) */
+      .login-main-btn {
+        background: #FEE500; color: #191919; border: none; border-radius: 14px;
+        padding: 14px; font-weight: 900; width: 100%; font-size: 15px;
+        display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+      }
+      .login-sub-btn {
+        background: #fff; color: var(--text); border: 1px solid var(--border);
+      }
+      .provider-badge {
+        display: inline-block; font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 10px;
+      }
+      .provider-badge.kakao { background: #FEE500; color: #191919; }
+      .provider-badge.email { background: #E6F0FF; color: #5BA9FF; }
+      .provider-badge.anon { background: #F0F0F0; color: #888; }
     </style>
     <!-- Kakao JavaScript SDK (6️⃣ 인증 & 카카오, KEONGYU-Cloudflare-Notion.md) -->
     <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js"></script>
@@ -288,46 +304,178 @@
       // Kakao.Picker.selectFriends({ title: '함께 갈 친구 선택', maxPickableCount: 5 })
       //   .then(friends => friends.users.forEach(f => addParticipant(routeId, f.displayName)));
 
-      // Kakao Login: 로그인 성공 시 카카오 프로필(닉네임/프로필사진)을 내 프로필에 반영.
-      // 'friends' 동의항목을 포함해야 이후 Kakao.Picker.selectFriends()가 정상 동작합니다.
-      window.kakaoLogin = function() {
-        if (!window.Kakao || !Kakao.isInitialized()) {
-          showToast('카카오 SDK가 초기화되지 않았어요.');
-          return;
-        }
-        Kakao.Auth.login({ scope: 'friends,profile_nickname,profile_image' })
-          .then(() => Kakao.API.request({ url: '/v2/user/me' }))
-          .then(res => {
-            const account = res.kakao_account || {};
-            const profile = account.profile || res.properties || {};
-            const nickname = profile.nickname || '카카오유저';
-            const profileImage = profile.profile_image_url || profile.profile_image || null;
-            state.user.name = nickname;
-            state.user.kakaoLoggedIn = true;
-            state.user.kakaoProfileImage = profileImage;
-            saveState();
-            showToast(`${nickname}님으로 로그인했어요! 👋`);
-            render();
-          })
-          .catch(() => {
-            showToast('카카오 로그인에 실패했어요.');
-          });
+      // ==========================================
+      // -0.8 로그인 시스템 (익명 / 카카오 / 이메일 코드)
+      // ==========================================
+      // safeSave(): 로그인 관련 코드에서 쓰는 별칭. saveState()의 quota 초과 시
+      // 이미지 정리(pruneLargeImages) 폴백 로직을 그대로 재사용합니다.
+      function safeSave() { saveState(); }
+
+      // TODO(D1 연동): fetch('/api/auth/kakao', {method:'POST', body:JSON.stringify({kakao_token})})
+      //   -> {user_id, session_token} 반환받아 D1 users 테이블에 upsert.
+      // TODO(보안): 지금은 세션이 localStorage(state.user)에만 있음. 프로덕션 전환 시
+      //   session_token은 httpOnly 쿠키로 옮기고 localStorage에는 저장하지 않도록 변경 예정.
+
+      // 로그인 전/후로 표시 이름이 바뀌어도(익명 '나' -> 카카오 닉네임 등) 이미 만든 루트가
+      // 계속 "내 루트"로 인식되도록 creator 필드를 함께 이관합니다.
+      function migrateCreatorName(oldName, newName) {
+        if (!oldName || !newName || oldName === newName) return;
+        state.routes.forEach(r => { if (r.creator === oldName) r.creator = newName; });
+        // KNOWN LIMITATION: state.user.followCheckins keys embed the display name
+        // (routeId_step_name), so GPS 체크인 기록은 이름이 바뀌면 과거 기록과 끊길 수 있음.
+        // 근본 해결은 user.id 기반 식별로 앱 전체를 리팩터링하는 것 (별도 작업 필요).
+      }
+
+      function resetUserToAnon() {
+        const oldName = state.user.name;
+        Object.assign(state.user, {
+          id: 'anon_' + Date.now(),
+          name: '나',
+          avatar: '🐻',
+          email: null,
+          provider: 'anon',
+          isLoggedIn: false,
+          kakaoLoggedIn: false,
+          kakaoProfileImage: null
+          // points/invites/stickersEarned/completedRoutes/followCheckins는 의도적으로 보존
+        });
+        migrateCreatorName(oldName, state.user.name);
+      }
+
+      window.openLoginSheet = function(mode) {
+        state.ui.loginSheet = { mode: mode || 'initial', email: '', codeSent: false, sentCode: null, sentAt: 0 };
+        state.ui.profileSheet = false;
+        render();
       };
 
-      window.kakaoLogout = function() {
-        if (!window.Kakao || !Kakao.isInitialized() || !Kakao.Auth.getAccessToken()) {
-          state.user.kakaoLoggedIn = false;
-          saveState();
+      window.openProfileSheet = function() {
+        state.ui.profileSheet = true;
+        render();
+      };
+
+      // Kakao 로그인: 성공 시 닉네임/이메일을 내 프로필에 반영.
+      // 'friends' 동의항목을 포함해야 이후 Kakao.Picker.selectFriends() (함께가기 초대)가 정상 동작합니다.
+      window.loginWithKakao = function() {
+        if (window.Kakao && Kakao.Auth) {
+          Kakao.Auth.login({ scope: 'friends,profile_nickname,profile_image,account_email' })
+            .then(() => Kakao.API.request({ url: '/v2/user/me' }))
+            .then(res => {
+              const account = res.kakao_account || {};
+              const profile = account.profile || res.properties || {};
+              const nickname = profile.nickname || '카카오유저';
+              const oldName = state.user.name;
+              migrateCreatorName(oldName, nickname);
+              Object.assign(state.user, {
+                id: 'kakao_' + res.id,
+                name: nickname,
+                avatar: hashNameToAvatar(nickname),
+                email: account.email || null,
+                provider: 'kakao',
+                isLoggedIn: true,
+                kakaoLoggedIn: true,
+                kakaoProfileImage: profile.profile_image_url || profile.profile_image || null
+              });
+              safeSave();
+              closeSheet();
+              render();
+              showToast(`환영해요, ${esc(nickname)}님! 👋`);
+            })
+            .catch(() => {
+              showToast('카카오 로그인에 실패했어요.');
+            });
+        } else {
+          // 카카오 SDK 로드 실패 등 폴백: 데모용 이름 입력 시뮬레이션
+          const name = prompt('카카오 로그인 시뮬 - 이름 입력') || '카카오유저';
+          const oldName = state.user.name;
+          migrateCreatorName(oldName, name);
+          Object.assign(state.user, {
+            id: 'kakao_' + Date.now(),
+            name,
+            avatar: hashNameToAvatar(name),
+            provider: 'kakao',
+            isLoggedIn: true,
+            kakaoLoggedIn: true
+          });
+          safeSave();
+          closeSheet();
           render();
+          showToast(`환영해요, ${esc(name)}님! 👋`);
+        }
+      };
+
+      window.setLoginEmail = function(e) {
+        if (state.ui.loginSheet) state.ui.loginSheet.email = e.target.value;
+      };
+
+      // 데모 시뮬레이션: 실제 메일 발송 없이 6자리 코드를 생성해 토스트로 보여줍니다.
+      // TODO(D1/이메일 연동): 실제로는 Worker에서 코드 생성 -> 이메일 발송 -> D1/KV에 임시 저장.
+      window.sendLoginCode = function() {
+        const sheet = state.ui.loginSheet;
+        if (!sheet) return;
+        if (!sheet.email || !sheet.email.includes('@')) {
+          showToast('올바른 이메일을 입력해주세요.');
           return;
         }
-        Kakao.Auth.logout(() => {
-          state.user.kakaoLoggedIn = false;
-          state.user.kakaoProfileImage = null;
-          saveState();
-          showToast('카카오 로그아웃했어요.');
-          render();
+        if (sheet.sentAt && Date.now() - sheet.sentAt < 30000) {
+          showToast('잠시 후 다시 시도해주세요. (30초 제한)');
+          return;
+        }
+        const code = String(Math.floor(100000 + Math.random() * 900000));
+        sheet.sentCode = code;
+        sheet.codeSent = true;
+        sheet.sentAt = Date.now();
+        showToast(`인증코드: ${code} (데모)`);
+        render();
+      };
+
+      window.verifyLoginCode = function() {
+        const sheet = state.ui.loginSheet;
+        if (!sheet || !sheet.sentCode) {
+          showToast('먼저 인증코드를 발송해주세요.');
+          return;
+        }
+        const inputCode = (document.getElementById('login-email-code') || {}).value || '';
+        if (inputCode.trim() !== sheet.sentCode) {
+          showToast('인증코드가 일치하지 않아요.');
+          return;
+        }
+        const email = sheet.email;
+        const namePart = email.split('@')[0];
+        const oldName = state.user.name;
+        migrateCreatorName(oldName, namePart);
+        Object.assign(state.user, {
+          id: 'email_' + email,
+          name: namePart,
+          avatar: hashNameToAvatar(email),
+          email,
+          provider: 'email',
+          isLoggedIn: true
         });
+        safeSave();
+        closeSheet();
+        render();
+        showToast(`환영해요, ${esc(namePart)}님! 👋`);
+      };
+
+      window.continueAsAnon = function() {
+        Object.assign(state.user, {
+          id: 'anon_' + Date.now(),
+          provider: 'anon',
+          isLoggedIn: false
+        });
+        try { localStorage.setItem('keongyu_skip_login', '1'); } catch (e) {}
+        safeSave();
+        closeSheet();
+        render();
+        showToast('익명으로 둘러보는 중 👀');
+      };
+
+      window.logoutUser = function() {
+        resetUserToAnon();
+        state.ui.profileSheet = false;
+        safeSave();
+        render();
+        showToast('로그아웃했어요.');
       };
 
       // ==========================================
@@ -627,7 +775,12 @@
         } catch (e) {}
         return {
           user: {
+            id: 'anon_' + Date.now(),
             name: '나',
+            avatar: '🐻',
+            email: null,
+            provider: 'anon', // 'kakao' | 'email' | 'anon'
+            isLoggedIn: false,
             points: 120,
             invites: 3,
             stickersEarned: 2,
@@ -672,7 +825,9 @@
             cameraFacing: 'environment',
             collabSheet: null, // { routeId }
             collabEditSheet: null, // { routeId, stepIndex, mode: 'edit'|'add', afterIdx }
-            charge: { pack: null, method: null }
+            charge: { pack: null, method: null },
+            loginSheet: null, // { mode:'initial'|'email', email, codeSent, sentCode, sentAt } or null
+            profileSheet: false
           },
           tempImages: []
         };
@@ -685,6 +840,13 @@
         // Backfill fields introduced after this state may have been saved to localStorage.
         if (state.user.kakaoLoggedIn === undefined) state.user.kakaoLoggedIn = false;
         if (state.user.kakaoProfileImage === undefined) state.user.kakaoProfileImage = null;
+        if (state.user.id === undefined) state.user.id = 'anon_' + Date.now();
+        if (state.user.avatar === undefined) state.user.avatar = hashNameToAvatar(state.user.name);
+        if (state.user.email === undefined) state.user.email = null;
+        if (state.user.provider === undefined) state.user.provider = 'anon';
+        if (state.user.isLoggedIn === undefined) state.user.isLoggedIn = false;
+        if (state.ui.loginSheet === undefined) state.ui.loginSheet = null;
+        if (state.ui.profileSheet === undefined) state.ui.profileSheet = false;
         if (!state.ui.collabSheet) state.ui.collabSheet = null;
         if (state.ui.collabEditSheet === undefined) state.ui.collabEditSheet = null;
         if (state.ui.charge === undefined) state.ui.charge = { pack: null, method: null };
@@ -982,6 +1144,8 @@
         state.ui.cameraActive = false;
         state.ui.collabSheet = null;
         state.ui.collabEditSheet = null;
+        state.ui.loginSheet = null;
+        state.ui.profileSheet = false;
         render();
       };
 
@@ -1743,7 +1907,7 @@
 
         // 2b. Lock background scroll while a sheet/overlay covers the screen
         // (prevents the page behind a bottom sheet from rubber-banding on mobile).
-        const anyOverlayOpen = !!(state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.cameraActive || state.ui.followRouteId);
+        const anyOverlayOpen = !!(state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.cameraActive || state.ui.followRouteId || state.ui.loginSheet || state.ui.profileSheet);
         document.body.style.overflow = anyOverlayOpen ? 'hidden' : '';
 
         // 3. Count unread notifications
@@ -1765,18 +1929,26 @@
               <span style="font-size:12px; color:var(--text-sub); font-weight:700;">경유</span>
             </div>
             <div class="header-right">
-              <div class="point-chip" onclick="openChargeModal()">
-                <span>⭐</span>
-                <span>${state.user.points}</span>
-              </div>
-              <div class="icon-btn" onclick="openNotifInbox()">
-                <span>🔔</span>
-                ${unreadCount > 0 ? `<div class="badge-dot">${unreadCount}</div>` : ''}
-              </div>
-              <div class="avatar-wrapper" onclick="setTab('myRoutes')" style="border:${myTier.border}; cursor:pointer; width:34px; height:34px;">
-                <span>${AVATAR_MAP[state.custom.equipped.avatar] || '🐻'}</span>
-                <span class="sticker-badge">${STICKER_MAP[state.custom.equipped.sticker] || '❤️'}</span>
-              </div>
+              ${state.user.isLoggedIn ? `
+                <div class="point-chip" onclick="openProfileSheet()">
+                  <span>⭐</span>
+                  <span>${state.user.points}</span>
+                </div>
+                <div class="icon-btn" onclick="openNotifInbox()">
+                  <span>🔔</span>
+                  ${unreadCount > 0 ? `<div class="badge-dot">${unreadCount}</div>` : ''}
+                </div>
+                <div class="avatar-wrapper" onclick="openProfileSheet()" style="border:${myTier.border}; cursor:pointer; width:34px; height:34px;">
+                  <span>${AVATAR_MAP[state.custom.equipped.avatar] || '🐻'}</span>
+                  <span class="sticker-badge">${STICKER_MAP[state.custom.equipped.sticker] || '❤️'}</span>
+                </div>
+              ` : `
+                <div class="icon-btn" onclick="openNotifInbox()">
+                  <span>🔔</span>
+                  ${unreadCount > 0 ? `<div class="badge-dot">${unreadCount}</div>` : ''}
+                </div>
+                <button class="cta-btn" style="padding:6px 12px; font-size:12px;" onclick="openLoginSheet('initial')">로그인</button>
+              `}
               <button class="upload-btn" onclick="openUploadSheet()">
                 <span>+</span><span>업로드</span>
               </button>
@@ -1970,13 +2142,15 @@
                   </div>
                 </div>
               </div>
-              ${state.user.kakaoLoggedIn ? `
+              ${state.user.isLoggedIn ? `
                 <div style="display:flex; align-items:center; justify-content:space-between; background:#FFFBEA; border-radius:12px; padding:8px 12px;">
-                  <span style="font-size:12px; font-weight:700; color:#8A6D00;">💬 카카오 계정으로 로그인됨</span>
-                  <button class="step-mini-btn" onclick="kakaoLogout()">로그아웃</button>
+                  <span style="font-size:12px; font-weight:700; color:#8A6D00;">
+                    ${state.user.provider === 'kakao' ? '💬 카카오' : '📧 이메일'} 계정으로 로그인됨
+                  </span>
+                  <button class="step-mini-btn" onclick="logoutUser()">로그아웃</button>
                 </div>
               ` : `
-                <button class="btn-secondary" style="background:#FEE500; color:#3C1E1E; width:100%; padding:10px;" onclick="kakaoLogin()">💬 카카오 로그인</button>
+                <button class="btn-secondary" style="background:#FEE500; color:#3C1E1E; width:100%; padding:10px;" onclick="openLoginSheet('initial')">💬 로그인하기</button>
               `}
             </div>
 
@@ -2760,6 +2934,100 @@
           `;
         }
 
+        // L. Login Sheet (최초 진입 로그인 유도 / 헤더에서 재오픈)
+        if (state.ui.loginSheet) {
+          const ls = state.ui.loginSheet;
+          const canClose = state.user.isLoggedIn; // 로그인 전엔 닫기 불가 - 익명 버튼으로만 진행
+          if (ls.mode === 'email') {
+            html += `
+              <div class="sheet-backdrop" ${canClose ? `onclick="closeSheet()"` : ''}>
+                <div class="bottom-sheet" onclick="event.stopPropagation()">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-size:16px; font-weight:900;">이메일로 시작하기</div>
+                    ${canClose ? `<button class="icon-btn" onclick="closeSheet()">✕</button>` : ''}
+                  </div>
+                  <input type="email" id="login-email-input" placeholder="you@example.com" value="${esc(ls.email)}" oninput="setLoginEmail(event)" style="border:1px solid var(--border); border-radius:12px; padding:12px 14px; font-size:14px;" />
+                  ${ls.codeSent ? `
+                    <input type="text" id="login-email-code" placeholder="6자리 인증코드" maxlength="6" style="border:1px solid var(--border); border-radius:12px; padding:12px 14px; font-size:14px; letter-spacing:4px;" />
+                    <div style="display:flex; gap:8px;">
+                      <button class="login-sub-btn" style="flex:1; border-radius:14px; padding:10px; font-weight:800; font-size:13px;" onclick="sendLoginCode()">코드 재발송</button>
+                      <button class="cta-btn" style="flex:1; padding:10px; font-size:13px;" onclick="verifyLoginCode()">로그인</button>
+                    </div>
+                  ` : `
+                    <button class="cta-btn" style="padding:12px; font-size:14px;" onclick="sendLoginCode()">코드 발송</button>
+                  `}
+                  <button style="background:none; border:none; color:var(--text-sub); font-size:12px; cursor:pointer; padding:4px 0;" onclick="openLoginSheet('initial')">← 다른 방법으로 시작하기</button>
+                </div>
+              </div>
+            `;
+          } else {
+            html += `
+              <div class="sheet-backdrop" ${canClose ? `onclick="closeSheet()"` : ''}>
+                <div class="bottom-sheet" onclick="event.stopPropagation()" style="text-align:center; gap:16px;">
+                  ${canClose ? `<div style="display:flex; justify-content:flex-end;"><button class="icon-btn" onclick="closeSheet()">✕</button></div>` : ''}
+                  <div>
+                    <div style="font-size:20px; font-weight:900;">경유 시작하기</div>
+                    <div style="font-size:12px; color:var(--text-sub); margin-top:4px;">KEONGYU 🚶</div>
+                  </div>
+                  <button class="login-main-btn" onclick="loginWithKakao()">💬 카카오로 시작하기</button>
+                  <button class="login-sub-btn" style="border-radius:14px; padding:14px; font-weight:800; font-size:14px; width:100%; cursor:pointer;" onclick="openLoginSheet('email')">📧 이메일로 시작하기</button>
+                  <button style="background:none; border:none; color:var(--text-sub); font-size:13px; cursor:pointer; padding:4px 0;" onclick="continueAsAnon()">👤 익명으로 둘러보기</button>
+                  <div style="font-size:11px; color:#999;">로그인하면 내 루트와 별사탕이 안전하게 보관돼요</div>
+                </div>
+              </div>
+            `;
+          }
+        }
+
+        // M. Profile Sheet (헤더 포인트칩/아바타 클릭)
+        if (state.ui.profileSheet) {
+          const myRouteCount = state.routes.filter(r => r.isMine).length;
+          const mySubCount = Object.keys(state.subscriptions).filter(k => state.subscriptions[k].subscribed).length;
+          const myCollabCount = state.routes.filter(r => r.isCollaborative).length;
+          const providerLabel = { kakao: '카카오', email: '이메일', anon: '익명' }[state.user.provider] || '익명';
+          html += `
+            <div class="sheet-backdrop" onclick="closeSheet()">
+              <div class="bottom-sheet" onclick="event.stopPropagation()">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div style="font-size:16px; font-weight:900;">내 프로필</div>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    ${state.user.isLoggedIn ? `<button class="step-mini-btn" onclick="logoutUser()">로그아웃</button>` : ''}
+                    <button class="icon-btn" onclick="closeSheet()">✕</button>
+                  </div>
+                </div>
+                <div style="display:flex; flex-direction:column; align-items:center; gap:8px; padding:8px 0;">
+                  <div class="avatar-wrapper" style="width:60px; height:60px; font-size:32px;">
+                    <span>${esc(state.user.avatar || '🐻')}</span>
+                  </div>
+                  <div style="font-size:17px; font-weight:900;">${esc(state.user.name)}</div>
+                  <span class="provider-badge ${state.user.provider || 'anon'}">${providerLabel}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; background:#F8F8F6; border-radius:14px; padding:12px 14px;">
+                  <span style="font-size:13px; font-weight:800; color:#E68A00;">⭐ 별사탕 ${state.user.points}개</span>
+                  <button class="cta-btn" style="padding:6px 12px; font-size:12px;" onclick="openChargeModal()">충전소</button>
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; text-align:center;">
+                  <div style="padding:10px; background:#F8F8F6; border-radius:12px;">
+                    <div style="font-size:15px; font-weight:900;">${myRouteCount}</div>
+                    <div style="font-size:11px; color:var(--text-sub);">작성 루트</div>
+                  </div>
+                  <div style="padding:10px; background:#F8F8F6; border-radius:12px;">
+                    <div style="font-size:15px; font-weight:900;">${mySubCount}</div>
+                    <div style="font-size:11px; color:var(--text-sub);">구독</div>
+                  </div>
+                  <div style="padding:10px; background:#F8F8F6; border-radius:12px;">
+                    <div style="font-size:15px; font-weight:900;">${myCollabCount}</div>
+                    <div style="font-size:11px; color:var(--text-sub);">함께가기</div>
+                  </div>
+                </div>
+                ${!state.user.isLoggedIn ? `
+                  <button class="cta-btn" style="background:var(--mint); padding:12px; font-size:14px;" onclick="openLoginSheet('initial')">🔐 로그인하고 데이터 지키기</button>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        }
+
         root.innerHTML = html;
 
         // 4a. Turnstile 봇 방지 위젯: 업로드/후기 시트가 열려있을 때만 표시 (#turnstile-widget은
@@ -2794,7 +3062,8 @@
       // Esc closes whatever sheet/overlay is currently on top.
       document.addEventListener('keydown', e => {
         if (e.key !== 'Escape') return;
-        if (state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.cameraActive) {
+        if (state.ui.loginSheet && !state.user.isLoggedIn) return; // 최초 로그인 유도는 Esc로 닫지 않음
+        if (state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.cameraActive || state.ui.loginSheet || state.ui.profileSheet) {
           closeSheet();
         } else if (state.ui.followRouteId) {
           closeFollowRoute();
@@ -2803,6 +3072,12 @@
 
       // Initial Render
       window.addEventListener('DOMContentLoaded', () => {
+        // 첫 진입 + 아직 로그인 안 함 + 익명으로 건너뛴 적 없으면 로그인 시트를 띄움 (익명 모드는 여전히 허용).
+        let skipLogin = false;
+        try { skipLogin = !!localStorage.getItem('keongyu_skip_login'); } catch (e) {}
+        if (!state.user.isLoggedIn && !skipLogin) {
+          state.ui.loginSheet = { mode: 'initial', email: '', codeSent: false, sentCode: null, sentAt: 0 };
+        }
         render();
         // Optional demo notification after 5 seconds to showcase YouTube-style real-time simulation
         setTimeout(() => {
