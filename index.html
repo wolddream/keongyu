@@ -938,11 +938,12 @@
       };
 
       function renderRouteThumb(route, heightPx) {
+        const openAttr = `onclick="startFollowRoute('${route.id}')"`;
         if (route.image) {
-          return `<img class="card-img" style="height:${heightPx}px;" src="${esc(route.image)}" alt="${esc(route.title)}" />`;
+          return `<img class="card-img" style="height:${heightPx}px; cursor:pointer;" src="${esc(route.image)}" alt="${esc(route.title)}" ${openAttr} />`;
         }
         const v = PURPOSE_VISUAL[route.purpose] || { emoji: '📍', gradient: 'linear-gradient(135deg, #F0F0EE, #E0E0DC)' };
-        return `<div class="card-img" style="height:${heightPx}px; background:${v.gradient}; display:flex; align-items:center; justify-content:center; font-size:${Math.round(heightPx * 0.4)}px;">${v.emoji}</div>`;
+        return `<div class="card-img" style="height:${heightPx}px; cursor:pointer; background:${v.gradient}; display:flex; align-items:center; justify-content:center; font-size:${Math.round(heightPx * 0.4)}px;" ${openAttr}>${v.emoji}</div>`;
       }
 
       // ==========================================
@@ -2177,7 +2178,7 @@
                       <span>${r.likes || 0}</span>
                     </button>
                   </div>
-                  <div class="card-title">${esc(r.title)}</div>
+                  <div class="card-title" style="cursor:pointer;" onclick="startFollowRoute('${r.id}')">${esc(r.title)}</div>
                   <div class="card-pills">
                     <span class="info-pill">📍 ${r.distance}</span>
                     <span class="info-pill">⏱️ ${r.time}</span>
@@ -2212,10 +2213,10 @@
                       ` : `
                         <span style="font-size:11px; font-weight:700; color:var(--primary); background:#F0F0FF; padding:3px 8px; border-radius:12px;">내 루트</span>
                       `}
-                      <button class="icon-btn" style="width:30px; height:30px; font-size:13px;" onclick="openShareSheet('${r.id}')" title="공유">
+                      <button class="icon-btn" style="width:30px; height:30px; font-size:13px;" onclick="startFollowRoute('${r.id}'); openShareSheet('${r.id}')" title="공유">
                         ↗
                       </button>
-                      <button class="btn-secondary" onclick="openCollabSheet('${r.id}')">👥 함께가기</button>
+                      <button class="btn-secondary" onclick="startFollowRoute('${r.id}'); openCollabSheet('${r.id}')">👥 함께가기</button>
                       <button class="cta-btn" onclick="startFollowRoute('${r.id}')">
                         따라가기
                       </button>
@@ -2340,7 +2341,7 @@
                         <span style="font-size:12px; font-weight:700; color:#FF4B6E;">❤️ ${r.likes || 0}</span>
                       </div>
                     </div>
-                    <div class="card-title">${esc(r.title)}</div>
+                    <div class="card-title" style="cursor:pointer;" onclick="startFollowRoute('${r.id}')">${esc(r.title)}</div>
                     <div class="card-pills">
                       <span class="info-pill">📍 ${r.distance}</span>
                       <span class="info-pill">⏱️ ${r.time}</span>
@@ -2350,8 +2351,8 @@
                     <div style="display:flex; justify-content:space-between; align-items:center; padding-top:6px; border-top:1px solid #F0F0EE; flex-wrap:wrap; gap:6px;">
                       <button class="cta-btn" style="background:#555;" onclick="startFollowRoute('${r.id}')">미리보기</button>
                       <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                        <button class="btn-secondary" onclick="openCollabSheet('${r.id}')">👥 함께가기</button>
-                        <button class="cta-btn" style="background:#FFF; color:var(--text); border:1px solid var(--border);" onclick="openShareSheet('${r.id}')">공유</button>
+                        <button class="btn-secondary" onclick="startFollowRoute('${r.id}'); openCollabSheet('${r.id}')">👥 함께가기</button>
+                        <button class="cta-btn" style="background:#FFF; color:var(--text); border:1px solid var(--border);" onclick="startFollowRoute('${r.id}'); openShareSheet('${r.id}')">공유</button>
                         <button class="cta-btn" onclick="startFollowRoute('${r.id}')">따라가기</button>
                         <button class="cta-btn" style="background:#FFF; color:var(--danger, #FF4242); border:1px solid var(--danger, #FF4242);" onclick="deleteMyRoute('${r.id}')">삭제</button>
                       </div>
