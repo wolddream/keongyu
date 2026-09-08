@@ -68,9 +68,17 @@ function toBase64Utf8(obj: unknown): string {
 
 // Kakao OAuth (authorization code) redirect target. Kakao's JS SDK v2 dropped the popup-based
 // Kakao.Auth.login(); the supported flow is now Kakao.Auth.authorize() (full-page redirect to
-// Kakao) -> Kakao redirects back here with ?code=... -> we exchange it server-side (keeping the
-// REST API key / client secret off the client) -> redirect back to the frontend with the
-// resulting profile in the URL hash, which index.html picks up on load.
+// Kakao) -> Kakao redirects back here with ?code=... -> we exchange it server-side (keeping any
+// client secret off the client) -> redirect back to the frontend with the resulting profile in
+// the URL hash, which index.html picks up on load.
+//
+// IMPORTANT: Kakao.Auth.authorize() on the frontend uses the JS key passed to Kakao.init() (see
+// KAKAO_JS_KEY in index.html) as the authorization request's client_id - NOT the REST API key.
+// The token exchange below MUST use that exact same client_id, or Kakao rejects it with
+// invalid_client/"Bad client credentials" even though the REST API key itself is fine (found by
+// live-testing with a real Kakao account - the two must match, they aren't interchangeable here).
+const KAKAO_JS_KEY = "c9b3225b112c58a9bba266cfe150b50a"; // public key, safe to hardcode - matches index.html
+
 async function handleKakaoCallback(request: Request, env: Env): Promise<Response> {
 	const url = new URL(request.url);
 	const code = url.searchParams.get("code");
@@ -88,7 +96,7 @@ async function handleKakaoCallback(request: Request, env: Env): Promise<Response
 	try {
 		const tokenBody = new URLSearchParams({
 			grant_type: "authorization_code",
-			client_id: env.KAKAO_REST_API_KEY,
+			client_id: KAKAO_JS_KEY,
 			redirect_uri: redirectUri,
 			code,
 		});
