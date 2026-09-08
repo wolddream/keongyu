@@ -274,8 +274,6 @@
 
     <!-- Hidden global inputs required by spec -->
     <input type="file" id="global-file-input" style="display:none;" multiple accept="image/*" />
-    <input type="file" id="fallback-camera-input" style="display:none;" capture="environment" accept="image/*" />
-    <input type="file" id="gpx-file-input" style="display:none;" accept=".gpx,application/gpx+xml" />
 
     <!-- Bottom Toast -->
     <div id="toast" class="toast-box"></div>
@@ -813,7 +811,9 @@
             collabEditSheet: null, // { routeId, stepIndex, mode: 'edit'|'add', afterIdx }
             charge: { pack: null, method: null },
             loginSheet: null, // { mode:'initial'|'email', email, codeSent, sentCode, sentAt } or null
-            profileSheet: false
+            profileSheet: false,
+            routeBuilder: null, // { title, purpose, distance, time, budget, steps: [] } - 새 루트 만들기 진행 중 상태
+            stopEditor: null // { editingIndex, category, name, ... } - 경유지 추가/수정 폼 상태
           },
           tempImages: []
         };
@@ -837,6 +837,8 @@
         if (!state.ui.collabSheet) state.ui.collabSheet = null;
         if (state.ui.collabEditSheet === undefined) state.ui.collabEditSheet = null;
         if (state.ui.charge === undefined) state.ui.charge = { pack: null, method: null };
+        if (state.ui.routeBuilder === undefined) state.ui.routeBuilder = null;
+        if (state.ui.stopEditor === undefined) state.ui.stopEditor = null;
         if (state.challenge.todayCheck === undefined) state.challenge.todayCheck = null;
         if (state.challenge.completed === undefined) state.challenge.completed = false;
         state.routes.forEach(r => {
@@ -1144,7 +1146,8 @@
 
       window.openUploadSheet = function() {
         state.ui.bottomSheet = 'upload';
-        state.tempImages = [];
+        state.ui.routeBuilder = { title: '', purpose: ROUTE_PURPOSES[0], distance: '', time: '', budget: '', steps: [] };
+        state.ui.stopEditor = null;
         render();
       };
 
@@ -1153,12 +1156,15 @@
           window._mediaStream.getTracks().forEach(t => t.stop());
           window._mediaStream = null;
         }
+        stopStepCameraStream();
         state.ui.bottomSheet = null;
         state.ui.cameraActive = false;
         state.ui.collabSheet = null;
         state.ui.collabEditSheet = null;
         state.ui.loginSheet = null;
         state.ui.profileSheet = false;
+        state.ui.routeBuilder = null;
+        state.ui.stopEditor = null;
         render();
       };
 
@@ -1198,309 +1204,360 @@
         });
       }
 
-      window.triggerAlbumUpload = function() {
-        const input = document.getElementById('global-file-input');
-        input.onchange = function(e) {
-          const files = Array.from(e.target.files || []);
-          if (!files.length) return;
-          showToast(`${files.length}장의 사진을 분석 중입니다... 🪄`);
-          Promise.all(files.map(resizeImageFile)).then(dataUrls => {
-            dataUrls.filter(Boolean).forEach(url => state.tempImages.push(url));
-            setTimeout(() => {
-              completePhotoUpload();
-            }, 1500);
-          });
+      // ==========================================
+      // Route Builder: 경유지를 하나씩 추가해 루트를 직접 구성하는 업로드 화면
+      // (여행-경유지-코스-뷰어의 AddStopModal 구성을 참고: 카테고리 · 시간 · 이동수단 ·
+      //  GPS · 카메라/파일/URL 사진 등록을 KEONGYU 톤에 맞춰 재구성)
+      // ==========================================
+      const ROUTE_PURPOSES = ['감성카페', '힐링·산책', '데이트', '작업·몰입', '야경·드라이브', '가성비'];
+
+      const STOP_CATEGORY_PRESETS = [
+        { type: 'cafe', label: '카페', emoji: '☕' },
+        { type: 'bakery', label: '베이커리', emoji: '🥐' },
+        { type: 'restaurant', label: '맛집', emoji: '🍽️' },
+        { type: 'convenience', label: '편의점', emoji: '🏪' },
+        { type: 'attraction', label: '관광지', emoji: '📸' },
+        { type: 'nature', label: '자연/공원', emoji: '🌳' }
+      ];
+
+      const TRANSIT_PRESETS = [
+        { type: 'walk', label: '도보', emoji: '🚶', defaultText: '도보 7분 (450m)' },
+        { type: 'car', label: '자가용', emoji: '🚗', defaultText: '차량 10분 (2.8km)' },
+        { type: 'bus', label: '버스', emoji: '🚌', defaultText: '버스 12분 (3정거장)' },
+        { type: 'subway', label: '지하철', emoji: '🚇', defaultText: '지하철 15분' },
+        { type: 'bike', label: '자전거', emoji: '🚲', defaultText: '자전거 8분 (1.5km)' }
+      ];
+
+      function newStopDraft() {
+        return {
+          editingIndex: null,
+          category: 'cafe',
+          emoji: '☕',
+          name: '',
+          subtitle: '',
+          arrivalTime: '',
+          stayDuration: '',
+          transitType: 'walk',
+          distanceFromPrev: '',
+          address: '',
+          description: '',
+          cost: '',
+          photoUrl: '',
+          photoCaption: '',
+          gps: null,
+          gpsLoading: false,
+          gpsError: null,
+          cameraOpen: false,
+          cameraFacing: 'environment',
+          cameraError: null
         };
-        input.click();
+      }
+
+      window.setRouteBuilderPurpose = function(purpose) {
+        if (!state.ui.routeBuilder) return;
+        state.ui.routeBuilder.purpose = purpose;
+        render();
       };
 
-      window.startLiveCamera = async function() {
-        const video = document.getElementById('camera-video');
-        if (!video || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          fallbackCamera();
+      window.cancelRouteBuilder = function() {
+        const builder = state.ui.routeBuilder;
+        if (builder && builder.steps.length > 0) {
+          if (!confirm('작성 중인 루트를 취소할까요? 추가한 경유지가 모두 사라져요.')) return;
+        }
+        closeSheet();
+      };
+
+      window.openStopEditor = function(index) {
+        const builder = state.ui.routeBuilder;
+        if (!builder) return;
+        if (index === null || index === undefined) {
+          state.ui.stopEditor = newStopDraft();
+        } else {
+          const step = builder.steps[index];
+          if (!step) return;
+          state.ui.stopEditor = {
+            ...newStopDraft(),
+            editingIndex: index,
+            category: step.category || 'cafe',
+            emoji: step.emoji || '☕',
+            name: step.name || '',
+            subtitle: step.subtitle || '',
+            arrivalTime: step.arrivalTime || '',
+            stayDuration: step.stayDuration || '',
+            transitType: step.transitType || 'walk',
+            distanceFromPrev: step.distanceFromPrev || '',
+            address: step.address || '',
+            description: step.memo || '',
+            cost: step.cost && step.cost !== '0원' ? step.cost.replace(/[^0-9]/g, '') : '',
+            photoUrl: step.image || '',
+            photoCaption: step.photoCaption || '',
+            gps: step.gps || null
+          };
+        }
+        render();
+      };
+
+      window.closeStopEditor = function() {
+        stopStepCameraStream();
+        state.ui.stopEditor = null;
+        render();
+      };
+
+      window.selectStopCategory = function(type) {
+        const preset = STOP_CATEGORY_PRESETS.find(p => p.type === type);
+        if (!preset || !state.ui.stopEditor) return;
+        state.ui.stopEditor.category = type;
+        state.ui.stopEditor.emoji = preset.emoji;
+        render();
+      };
+
+      window.selectStopTransit = function(type) {
+        const preset = TRANSIT_PRESETS.find(p => p.type === type);
+        if (!preset || !state.ui.stopEditor) return;
+        state.ui.stopEditor.transitType = type;
+        state.ui.stopEditor.distanceFromPrev = preset.defaultText;
+        render();
+      };
+
+      window.getStopEditorGps = function() {
+        const editor = state.ui.stopEditor;
+        if (!editor) return;
+        if (!navigator.geolocation) {
+          editor.gpsError = '이 브라우저에서는 GPS 위치 기능을 지원하지 않습니다.';
+          render();
           return;
         }
+        editor.gpsLoading = true;
+        editor.gpsError = null;
+        render();
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            const { latitude, longitude, accuracy } = pos.coords;
+            const formattedText = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+            editor.gps = { lat: latitude, lng: longitude, accuracy: Math.round(accuracy || 0), formattedText };
+            editor.gpsLoading = false;
+            const addrInput = document.getElementById('stop-form-address');
+            if (addrInput && !addrInput.value.trim()) {
+              addrInput.value = `GPS 좌표 (${formattedText})`;
+              editor.address = addrInput.value;
+            }
+            render();
+          },
+          err => {
+            editor.gpsLoading = false;
+            editor.gpsError = err.code === err.PERMISSION_DENIED
+              ? '위치 접근 권한이 거부되었습니다. 브라우저 설정에서 위치 권한을 허용해주세요.'
+              : '현재 GPS 신호를 가져올 수 없습니다. 잠시 후 다시 시도해주세요.';
+            render();
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+        );
+      };
+
+      window.clearStopEditorGps = function() {
+        if (!state.ui.stopEditor) return;
+        state.ui.stopEditor.gps = null;
+        render();
+      };
+
+      window.handleStopFileInput = function(e) {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (!file || !state.ui.stopEditor) return;
+        resizeImageFile(file).then(url => {
+          if (!url || !state.ui.stopEditor) return;
+          state.ui.stopEditor.photoUrl = url;
+          if (!state.ui.stopEditor.photoCaption) {
+            state.ui.stopEditor.photoCaption = `${file.name.replace(/\.[^/.]+$/, '')} 현장 사진`;
+          }
+          render();
+        });
+      };
+
+      window.clearStopPhoto = function() {
+        if (!state.ui.stopEditor) return;
+        state.ui.stopEditor.photoUrl = '';
+        render();
+      };
+
+      function stopStepCameraStream() {
+        if (window._stepMediaStream) {
+          window._stepMediaStream.getTracks().forEach(t => t.stop());
+          window._stepMediaStream = null;
+        }
+      }
+
+      window.startStepCamera = async function() {
+        const editor = state.ui.stopEditor;
+        if (!editor) return;
+        editor.cameraOpen = true;
+        editor.cameraError = null;
+        render();
+        stopStepCameraStream();
         try {
-          if (window._mediaStream) {
-            window._mediaStream.getTracks().forEach(t => t.stop());
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('이 브라우저는 카메라 스트림을 지원하지 않습니다.');
           }
           const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: state.ui.cameraFacing || 'environment' }
+            video: { facingMode: editor.cameraFacing || 'environment' }
           });
-          window._mediaStream = stream;
-          video.srcObject = stream;
-          video.play();
+          window._stepMediaStream = stream;
+          const video = document.getElementById('step-camera-video');
+          if (video) {
+            video.srcObject = stream;
+            video.play();
+          }
         } catch (err) {
-          fallbackCamera();
+          editor.cameraError = '카메라를 열 수 없습니다. 카메라 권한을 확인하거나 파일 업로드를 이용하세요.';
+          render();
         }
       };
 
-      window.fallbackCamera = function() {
-        showToast('카메라 스트림 권한 대신 파일 캡처 모드로 전환합니다.');
-        const fallback = document.getElementById('fallback-camera-input');
-        fallback.onchange = function(e) {
-          const file = e.target.files && e.target.files[0];
-          if (!file) return;
-          resizeImageFile(file).then(url => {
-            if (url) state.tempImages.push(url);
-            completePhotoUpload();
-          });
-        };
-        fallback.click();
+      window.stopStepCamera = function() {
+        stopStepCameraStream();
+        if (state.ui.stopEditor) {
+          state.ui.stopEditor.cameraOpen = false;
+          state.ui.stopEditor.cameraError = null;
+        }
+        render();
       };
 
-      window.switchCameraFacing = function() {
-        state.ui.cameraFacing = state.ui.cameraFacing === 'environment' ? 'user' : 'environment';
-        startLiveCamera();
+      window.switchStepCameraFacing = function() {
+        if (!state.ui.stopEditor) return;
+        state.ui.stopEditor.cameraFacing = state.ui.stopEditor.cameraFacing === 'environment' ? 'user' : 'environment';
+        startStepCamera();
       };
 
-      window.captureFrame = function() {
-        const video = document.getElementById('camera-video');
-        if (!video || !video.videoWidth) {
+      window.captureStepPhoto = function() {
+        const video = document.getElementById('step-camera-video');
+        const editor = state.ui.stopEditor;
+        if (!video || !video.videoWidth || !editor) {
           showToast('카메라가 아직 준비되지 않았어요. 잠시 후 다시 시도해주세요.');
           return;
         }
-        const srcWidth = video.videoWidth || 640;
-        const srcHeight = video.videoHeight || 480;
-        let width = srcWidth;
-        let height = srcHeight;
-        if (width > IMAGE_MAX_DIM || height > IMAGE_MAX_DIM) {
-          if (width > height) {
-            height = Math.round(height * (IMAGE_MAX_DIM / width));
-            width = IMAGE_MAX_DIM;
-          } else {
-            width = Math.round(width * (IMAGE_MAX_DIM / height));
-            height = IMAGE_MAX_DIM;
-          }
-        }
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', IMAGE_QUALITY);
-        state.tempImages.push(dataUrl);
-        showToast(`인증샷 ${state.tempImages.length}장이 캡처되었습니다! 📸`);
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        editor.photoUrl = canvas.toDataURL('image/jpeg', IMAGE_QUALITY);
+        if (!editor.photoCaption) editor.photoCaption = '카메라로 현장 직접 촬영한 사진';
+        stopStepCameraStream();
+        editor.cameraOpen = false;
+        const hadGps = !!editor.gps;
         render();
+        if (!hadGps) window.getStopEditorGps();
       };
 
-      window.openLiveCamera = function() {
-        state.ui.bottomSheet = null;
-        state.ui.cameraActive = true;
-        state.tempImages = [];
-        render();
-        startLiveCamera();
-      };
+      window.saveStopEditor = function() {
+        const editor = state.ui.stopEditor;
+        const builder = state.ui.routeBuilder;
+        if (!editor || !builder) return;
 
-      window.finishLiveCapture = function() {
-        if (!state.tempImages.length) return;
-        if (window._mediaStream) {
-          window._mediaStream.getTracks().forEach(t => t.stop());
-          window._mediaStream = null;
+        const name = document.getElementById('stop-form-name')?.value.trim();
+        const subtitle = document.getElementById('stop-form-subtitle')?.value.trim();
+        const arrivalTime = document.getElementById('stop-form-time')?.value.trim();
+        const stayDuration = document.getElementById('stop-form-duration')?.value.trim();
+        const distanceFromPrev = document.getElementById('stop-form-transit-distance')?.value.trim();
+        const address = document.getElementById('stop-form-address')?.value.trim();
+        const description = document.getElementById('stop-form-desc')?.value.trim();
+        const costRaw = document.getElementById('stop-form-cost')?.value.trim();
+        const photoCaption = document.getElementById('stop-form-photo-caption')?.value.trim();
+
+        if (!name) {
+          showToast('장소명을 입력해주세요.');
+          return;
         }
-        state.ui.cameraActive = false;
-        completePhotoUpload();
+
+        const isFirst = editor.editingIndex === null ? builder.steps.length === 0 : editor.editingIndex === 0;
+        const costNum = costRaw ? Number(costRaw.replace(/[^0-9]/g, '')) : 0;
+
+        const step = {
+          category: editor.category,
+          emoji: editor.emoji,
+          name,
+          subtitle: subtitle || '',
+          arrivalTime: arrivalTime || '',
+          stayDuration: stayDuration || '',
+          transitType: isFirst ? null : editor.transitType,
+          distanceFromPrev: isFirst ? '' : (distanceFromPrev || ''),
+          address: address || (editor.gps ? `GPS 좌표 (${editor.gps.formattedText})` : ''),
+          memo: description || '',
+          cost: costNum > 0 ? `${costNum.toLocaleString()}원` : '0원',
+          image: editor.photoUrl || null,
+          photoCaption: photoCaption || '',
+          gps: editor.gps || null
+        };
+
+        if (editor.editingIndex === null) {
+          builder.steps.push(step);
+        } else {
+          builder.steps[editor.editingIndex] = { ...builder.steps[editor.editingIndex], ...step };
+        }
+
+        const wasAdd = editor.editingIndex === null;
+        state.ui.stopEditor = null;
+        render();
+        showToast(wasAdd ? '경유지가 추가됐어요! 📍' : '경유지가 수정됐어요 ✏️');
       };
 
-      function completePhotoUpload() {
-        state.ui.cameraActive = false;
+      window.removeBuilderStep = function(index) {
+        if (!state.ui.routeBuilder) return;
+        if (!confirm('이 경유지를 삭제할까요?')) return;
+        state.ui.routeBuilder.steps.splice(index, 1);
+        render();
+      };
+
+      window.finalizeRouteBuilder = function() {
+        const builder = state.ui.routeBuilder;
+        if (!builder) return;
+
+        const title = document.getElementById('builder-title')?.value.trim();
+        const distance = document.getElementById('builder-distance')?.value.trim();
+        const time = document.getElementById('builder-time')?.value.trim();
+        const budgetRaw = document.getElementById('builder-budget')?.value.trim();
+
+        if (!title) {
+          showToast('루트 제목을 입력해주세요.');
+          return;
+        }
+        if (builder.steps.length < 1) {
+          showToast('경유지를 1개 이상 추가해주세요.');
+          return;
+        }
+
+        const orderedSteps = builder.steps.map((s, i) => ({
+          ...s,
+          type: i === 0 ? 'START' : (i === builder.steps.length - 1 ? '도착' : '경유')
+        }));
+        const budgetNum = budgetRaw ? Number(budgetRaw.replace(/[^0-9]/g, '')) : 0;
+        const coverImage = orderedSteps.find(s => s.image)?.image || null;
+
         const newRoute = {
           id: 'r_' + Date.now(),
-          title: '내가 찍은 사진으로 완성한 산책길',
-          purpose: '감성카페',
-          tags: ['#사진기반', '#감성스팟', '#내루트'],
-          distance: '1.2km',
-          time: '35분',
-          budget: '1.2만원',
+          title,
+          purpose: builder.purpose,
+          tags: [`#${builder.purpose}`, '#직접등록', `#경유지${orderedSteps.length}곳`],
+          distance: distance || '정보 없음',
+          time: time || '정보 없음',
+          budget: budgetNum > 0 ? `${budgetNum.toLocaleString()}원` : '0원',
           likes: 0,
           creator: state.user.name,
           isPublic: true,
           isMine: true,
-          image: state.tempImages[0] || null,
-          steps: [
-            { type: 'START', name: '첫 번째 사진 발견 스팟', address: '서울 성동구 연무장길 10', cost: '0원', memo: '사진 EXIF 위치에서 자동 생성됨' },
-            { type: '경유', name: '경유 카페 스팟', address: '서울 성동구 서울숲길 15', cost: '6,000원', memo: '따뜻한 커피 한 잔' },
-            { type: '도착', name: '산책 마무리 벤치', address: '서울 성동구 뚝섬로 273', cost: '0원', memo: '완주 인증 완료' }
-          ],
+          image: coverImage,
+          steps: orderedSteps,
           comments: []
         };
+
         state.routes.unshift(withCollabDefaults(newRoute));
-        state.tempImages = [];
         state.user.points += 15;
+        state.ui.routeBuilder = null;
+        state.ui.stopEditor = null;
         state.ui.bottomSheet = null;
         state.ui.tab = 'myRoutes';
         saveState();
-        showToast('새 루트가 등록되었습니다! ⭐+15 적립');
+        showToast('루트가 성공적으로 등록되었습니다! ⭐+15 적립');
         render();
-      }
-
-      // Upload method B: Map link
-      window.uploadMapLink = function() {
-        const link = prompt('네이버/카카오/구글 지도 링크를 입력하세요:');
-        if (!link) return;
-        showToast('지도 좌표를 파싱하여 3단계 루트를 생성 중입니다...');
-        setTimeout(() => {
-          const newRoute = {
-            id: 'r_' + Date.now(),
-            title: '지도 링크로 가져온 추천 코스',
-            purpose: '데이트',
-            tags: ['#지도추천', '#데이트', '#핵심경유'],
-            distance: '1.5km',
-            time: '40분',
-            budget: '2.0만원',
-            likes: 0,
-            creator: state.user.name,
-            isPublic: true,
-            isMine: true,
-            image: null,
-            steps: [
-              { type: 'START', name: '출발지 (지도 지정)', address: '서울 마포구 와우산로 21', cost: '0원', memo: '링크 파싱 완료' },
-              { type: '경유', name: '추천 맛집/카페', address: '서울 마포구 어울마당로 65', cost: '12,000원', memo: '시그니처 메뉴' },
-              { type: '도착', name: '도착지 휴식 장소', address: '서울 마포구 독막로 12', cost: '0원', memo: '여유로운 산책길' }
-            ],
-            comments: []
-          };
-          state.routes.unshift(withCollabDefaults(newRoute));
-          state.user.points += 15;
-          state.ui.bottomSheet = null;
-          state.ui.tab = 'myRoutes';
-          saveState();
-          showToast('지도 기반 루트가 완성되었습니다! ⭐+15 적립');
-          render();
-        }, 1000);
-      };
-
-      // Upload method C: GPX
-      function haversineMeters(a, b) {
-        const R = 6371000;
-        const dLat = (b.lat - a.lat) * Math.PI / 180;
-        const dLng = (b.lng - a.lng) * Math.PI / 180;
-        const lat1 = a.lat * Math.PI / 180;
-        const lat2 = b.lat * Math.PI / 180;
-        const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-        return 2 * R * Math.asin(Math.sqrt(h));
-      }
-
-      function parseGPXToRoute(xmlText, fileName) {
-        const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-        if (doc.querySelector('parsererror')) throw new Error('GPX 파일 형식이 올바르지 않습니다.');
-
-        let points = Array.from(doc.querySelectorAll('trkpt, rtept'));
-        if (!points.length) points = Array.from(doc.querySelectorAll('wpt'));
-
-        const coords = points
-          .map(p => ({ lat: parseFloat(p.getAttribute('lat')), lng: parseFloat(p.getAttribute('lon')) }))
-          .filter(c => Number.isFinite(c.lat) && Number.isFinite(c.lng));
-
-        if (coords.length < 2) throw new Error('GPX 파일에서 유효한 트랙 포인트를 찾을 수 없습니다.');
-
-        let distanceM = 0;
-        for (let i = 1; i < coords.length; i++) distanceM += haversineMeters(coords[i - 1], coords[i]);
-        const distanceKm = distanceM / 1000;
-        const estMinutes = Math.max(5, Math.round((distanceKm / 4.5) * 60));
-
-        const start = coords[0];
-        const mid = coords[Math.floor(coords.length / 2)];
-        const end = coords[coords.length - 1];
-        const baseName = (fileName || 'GPX 트랙').replace(/\.gpx$/i, '');
-
-        return {
-          id: 'r_' + Date.now(),
-          title: `${baseName} 트래킹 기록`,
-          purpose: '힐링·산책',
-          tags: ['#GPX트랙', '#워킹', '#실측루트'],
-          distance: `${distanceKm.toFixed(1)}km`,
-          time: `${estMinutes}분`,
-          budget: '0원',
-          likes: 0,
-          creator: state.user.name,
-          isPublic: true,
-          isMine: true,
-          image: null,
-          steps: [
-            { type: 'START', name: '트랙 시작점', address: `좌표: ${start.lat.toFixed(5)}, ${start.lng.toFixed(5)}`, cost: '0원', memo: 'GPX 파일에서 추출된 좌표' },
-            { type: '경유', name: '트랙 경유점', address: `좌표: ${mid.lat.toFixed(5)}, ${mid.lng.toFixed(5)}`, cost: '0원', memo: '트랙 중간 지점' },
-            { type: '도착', name: '트랙 도착점', address: `좌표: ${end.lat.toFixed(5)}, ${end.lng.toFixed(5)}`, cost: '0원', memo: 'GPX 파일에서 추출된 좌표' }
-          ],
-          comments: []
-        };
-      }
-
-      window.uploadGPX = function() {
-        const input = document.getElementById('gpx-file-input');
-        input.onchange = function(e) {
-          const file = e.target.files && e.target.files[0];
-          input.value = '';
-          if (!file) return;
-          showToast('GPX 트랙 파일에서 이동 경로를 계산 중입니다...');
-          const reader = new FileReader();
-          reader.onload = function(evt) {
-            try {
-              const newRoute = parseGPXToRoute(evt.target.result, file.name);
-              state.routes.unshift(withCollabDefaults(newRoute));
-              state.user.points += 15;
-              state.ui.bottomSheet = null;
-              state.ui.tab = 'myRoutes';
-              saveState();
-              showToast('GPX 루트가 성공적으로 등록되었습니다! ⭐+15 적립');
-              render();
-            } catch (err) {
-              showToast(err.message || 'GPX 파일을 분석할 수 없습니다.');
-            }
-          };
-          reader.onerror = function() {
-            showToast('GPX 파일을 읽는 중 오류가 발생했습니다.');
-          };
-          reader.readAsText(file);
-        };
-        input.click();
-      };
-
-      // Upload method D: GPS Only
-      window.uploadGPSOnly = function() {
-        showToast('현재 GPS 위치를 탐색하는 중입니다...');
-        const onLocationFound = (lat, lng) => {
-          const placeName = prompt('현재 위치의 장소명을 입력하세요 (비워두면 "현재 위치"):', '성수동 감성 골목') || '현재 위치';
-          const newRoute = {
-            id: 'r_' + Date.now(),
-            title: `${placeName} 주변 즉석 산책길`,
-            purpose: '힐링·산책',
-            tags: ['#GPS체크인', '#실시간', '#주변산책'],
-            distance: '0.8km',
-            time: '25분',
-            budget: '5,000원',
-            likes: 0,
-            creator: state.user.name,
-            isPublic: true,
-            isMine: true,
-            image: null,
-            steps: [
-              { type: 'START', name: placeName, address: `좌표: ${lat.toFixed(4)}, ${lng.toFixed(4)}`, cost: '0원', memo: '실시간 GPS 인증 스팟' },
-              { type: '도착', name: `${placeName} 인근 쉼터`, address: '도보 5분 거리 벤치', cost: '5,000원', memo: '여유로운 시간' }
-            ],
-            comments: []
-          };
-          state.routes.unshift(withCollabDefaults(newRoute));
-          state.user.points += 15;
-          state.ui.bottomSheet = null;
-          state.ui.tab = 'myRoutes';
-          saveState();
-          showToast('GPS 기반 루트가 생성되었습니다! ⭐+15 적립');
-          render();
-        };
-
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            pos => onLocationFound(pos.coords.latitude, pos.coords.longitude),
-            err => {
-              showToast('위치 권한 실패. 서울시청 기준 좌표로 등록합니다.');
-              onLocationFound(37.5665, 126.9780);
-            },
-            { timeout: 6000 }
-          );
-        } else {
-          onLocationFound(37.5665, 126.9780);
-        }
       };
 
       // ==========================================
@@ -1986,7 +2043,7 @@
 
         // 2b. Lock background scroll while a sheet/overlay covers the screen
         // (prevents the page behind a bottom sheet from rubber-banding on mobile).
-        const anyOverlayOpen = !!(state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.cameraActive || state.ui.followRouteId || state.ui.loginSheet || state.ui.profileSheet);
+        const anyOverlayOpen = !!(state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.stopEditor || state.ui.followRouteId || state.ui.loginSheet || state.ui.profileSheet);
         document.body.style.overflow = anyOverlayOpen ? 'hidden' : '';
 
         // 3. Count unread notifications
@@ -2533,27 +2590,6 @@
           `;
         }
 
-        // A2. Live Camera Overlay
-        if (state.ui.cameraActive) {
-          html += `
-            <div class="fullscreen-overlay">
-              <div class="overlay-inner" style="padding:0; background:#000; position:relative;">
-                <video id="camera-video" autoplay playsinline muted style="width:100%; height:100%; object-fit:cover; background:#000;"></video>
-                <div style="position:absolute; top:0; left:0; right:0; padding:14px 16px; display:flex; justify-content:space-between; align-items:center;">
-                  <button class="icon-btn" onclick="closeSheet()">✕</button>
-                  <div style="background:rgba(0,0,0,0.5); color:#FFF; font-size:12px; font-weight:700; padding:6px 12px; border-radius:14px;">📸 ${state.tempImages.length}장 촬영됨</div>
-                  <button class="icon-btn" onclick="switchCameraFacing()">🔄</button>
-                </div>
-                <div style="position:absolute; bottom:0; left:0; right:0; padding:20px 16px 28px; display:flex; align-items:center; justify-content:center; gap:14px; background:linear-gradient(transparent, rgba(0,0,0,0.65));">
-                  <button class="cta-btn" style="background:rgba(255,255,255,0.15); color:#FFF; flex:1;" onclick="closeSheet()">취소</button>
-                  <button style="width:60px; height:60px; border-radius:50%; background:#FFF; border:4px solid rgba(255,255,255,0.4); cursor:pointer; flex-shrink:0;" onclick="captureFrame()"></button>
-                  <button class="cta-btn" style="flex:1; opacity:${state.tempImages.length === 0 ? '0.5' : '1'};" ${state.tempImages.length === 0 ? 'disabled' : ''} onclick="finishLiveCapture()">완료 (${state.tempImages.length})</button>
-                </div>
-              </div>
-            </div>
-          `;
-        }
-
         // B. Notification Settings Sheet (YouTube Style V3)
         if (state.ui.bottomSheet === 'notifSetting' && state.ui.notifSheetCreator) {
           const creator = state.ui.notifSheetCreator;
@@ -2654,47 +2690,171 @@
           `;
         }
 
-        // D. Upload Options Sheet (2x2 Grid)
-        if (state.ui.bottomSheet === 'upload') {
+        // D. Route Builder Sheet (경유지를 하나씩 추가해 루트 직접 구성)
+        if (state.ui.bottomSheet === 'upload' && state.ui.routeBuilder) {
+          const rb = state.ui.routeBuilder;
           html += `
-            <div class="sheet-backdrop" onclick="closeSheet()">
+            <div class="sheet-backdrop" onclick="cancelRouteBuilder()">
               <div class="bottom-sheet" onclick="event.stopPropagation()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <div style="font-size:16px; font-weight:900;">새 루트 만들기</div>
-                  <button class="icon-btn" onclick="closeSheet()">✕</button>
+                  <button class="icon-btn" onclick="cancelRouteBuilder()">✕</button>
                 </div>
+                <div style="font-size:12px; color:var(--text-sub); margin-top:-10px;">경유지를 순서대로 추가해서 나만의 루트를 완성해보세요.</div>
 
-                <div class="grid-2x2">
-                  <div class="grid-card" onclick="triggerAlbumUpload()">
-                    <span class="rec-badge">추천</span>
-                    <span style="font-size:28px;">📸</span>
-                    <div style="font-size:14px; font-weight:800;">사진으로 만들기</div>
-                    <div style="font-size:11px; color:var(--text-sub);">앨범 여러 장 선택</div>
-                  </div>
+                <input type="text" id="builder-title" placeholder="루트 제목 (예: 성수 감성 카페 투어)" value="${esc(rb.title)}" oninput="state.ui.routeBuilder.title=this.value" style="border:1px solid var(--border); border-radius:12px; padding:11px 12px; font-size:14px; font-weight:700;" />
 
-                  <div class="grid-card" onclick="uploadMapLink()">
-                    <span style="font-size:28px;">🔗</span>
-                    <div style="font-size:14px; font-weight:800;">지도 링크</div>
-                    <div style="font-size:11px; color:var(--text-sub);">네이버/카카오 지도</div>
-                  </div>
-
-                  <div class="grid-card" onclick="uploadGPX()">
-                    <span style="font-size:28px;">🧭</span>
-                    <div style="font-size:14px; font-weight:800;">GPX 업로드</div>
-                    <div style="font-size:11px; color:var(--text-sub);">러닝/워킹 트랙</div>
-                  </div>
-
-                  <div class="grid-card" onclick="uploadGPSOnly()">
-                    <span style="font-size:28px;">📍</span>
-                    <div style="font-size:14px; font-weight:800;">GPS 위치만</div>
-                    <div style="font-size:11px; color:var(--text-sub);">현재 위치 즉석 등록</div>
+                <div>
+                  <div style="font-size:12px; font-weight:800; color:var(--text-sub); margin-bottom:6px;">테마</div>
+                  <div class="filter-scroll">
+                    ${ROUTE_PURPOSES.map(p => `
+                      <div class="filter-chip sub-chip ${rb.purpose === p ? 'active' : ''}" onclick="setRouteBuilderPurpose('${p}')">${(PURPOSE_VISUAL[p] || {}).emoji || ''} ${p}</div>
+                    `).join('')}
                   </div>
                 </div>
 
-                <div style="border-top:1px solid var(--border); padding-top:12px; display:flex; justify-content:space-between; align-items:center;">
-                  <div style="font-size:12px; color:var(--text-sub);">실시간 카메라로 직접 찍기</div>
-                  <button class="cta-btn" style="background:#333;" onclick="openLiveCamera()">📷 즉석 촬영</button>
+                <div>
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <div style="font-size:12px; font-weight:800; color:var(--text-sub);">경유지 (${rb.steps.length}곳)</div>
+                    <button class="btn-secondary" style="padding:6px 12px; font-size:12px;" onclick="openStopEditor(null)">+ 경유지 추가</button>
+                  </div>
+                  ${rb.steps.length === 0 ? `
+                    <div style="text-align:center; padding:26px 12px; color:var(--text-sub); background:#F8F8F6; border-radius:14px; font-size:12px; line-height:1.6;">
+                      아직 추가된 경유지가 없어요.<br/>위 버튼으로 첫 번째 장소를 등록해보세요!
+                    </div>
+                  ` : rb.steps.map((s, i) => `
+                    <div style="display:flex; align-items:center; gap:10px; padding:10px; border:1px solid var(--border); border-radius:14px; margin-bottom:8px;">
+                      <div style="width:32px; height:32px; border-radius:50%; background:#F0F4FF; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0;">${s.emoji || '📍'}</div>
+                      <div style="flex:1; min-width:0;">
+                        <div style="font-size:12px; font-weight:800; color:var(--primary);">${i === 0 ? 'START' : (i === rb.steps.length - 1 ? '도착' : `경유 ${i}`)}</div>
+                        <div style="font-size:13px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(s.name)}</div>
+                        <div style="font-size:11px; color:var(--text-sub); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(s.address || '주소 미입력')}</div>
+                      </div>
+                      <div style="display:flex; flex-direction:column; gap:4px;">
+                        <button class="step-mini-btn" onclick="openStopEditor(${i})">✏️ 수정</button>
+                        <button class="step-mini-btn" onclick="removeBuilderStep(${i})">🗑️ 삭제</button>
+                      </div>
+                    </div>
+                  `).join('')}
                 </div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
+                  <input type="text" id="builder-distance" placeholder="총 거리 (예: 1.5km)" value="${esc(rb.distance)}" oninput="state.ui.routeBuilder.distance=this.value" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
+                  <input type="text" id="builder-time" placeholder="소요시간 (예: 40분)" value="${esc(rb.time)}" oninput="state.ui.routeBuilder.time=this.value" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
+                  <input type="text" id="builder-budget" placeholder="예상비용(원)" value="${esc(rb.budget)}" oninput="state.ui.routeBuilder.budget=this.value" inputmode="numeric" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
+                </div>
+
+                <button class="cta-btn" style="padding:14px; font-size:14px; opacity:${rb.steps.length === 0 ? '0.5' : '1'};" onclick="finalizeRouteBuilder()">🚀 루트 등록 완료</button>
+              </div>
+            </div>
+          `;
+        }
+
+        // D2. Stop Editor Sheet (경유지 추가/수정 - 카테고리 · 시간 · 이동수단 · GPS · 사진)
+        if (state.ui.stopEditor) {
+          const se = state.ui.stopEditor;
+          const builder = state.ui.routeBuilder;
+          const isFirst = builder ? (se.editingIndex === null ? builder.steps.length === 0 : se.editingIndex === 0) : true;
+          html += `
+            <div class="sheet-backdrop" onclick="closeStopEditor()">
+              <div class="bottom-sheet" onclick="event.stopPropagation()">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div style="font-size:16px; font-weight:900;">${se.editingIndex === null ? '경유지 추가' : '경유지 수정'}</div>
+                  <button class="icon-btn" onclick="closeStopEditor()">✕</button>
+                </div>
+
+                <div>
+                  <div style="font-size:12px; font-weight:800; color:var(--text-sub); margin-bottom:6px;">카테고리</div>
+                  <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px;">
+                    ${STOP_CATEGORY_PRESETS.map(p => `
+                      <div class="radio-item ${se.category === p.type ? 'selected' : ''}" style="margin-bottom:0; padding:8px; flex-direction:column; gap:2px; justify-content:center;" onclick="selectStopCategory('${p.type}')">
+                        <span style="font-size:17px;">${p.emoji}</span>
+                        <span style="font-size:11px; font-weight:700;">${p.label}</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+
+                <input type="text" id="stop-form-name" placeholder="장소명 *" value="${esc(se.name)}" oninput="state.ui.stopEditor.name=this.value" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:14px; font-weight:700;" />
+                <input type="text" id="stop-form-subtitle" placeholder="한 줄 소개" value="${esc(se.subtitle)}" oninput="state.ui.stopEditor.subtitle=this.value" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                  <input type="text" id="stop-form-time" placeholder="도착 예정 시간" value="${esc(se.arrivalTime)}" oninput="state.ui.stopEditor.arrivalTime=this.value" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
+                  <input type="text" id="stop-form-duration" placeholder="체류 시간" value="${esc(se.stayDuration)}" oninput="state.ui.stopEditor.stayDuration=this.value" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
+                </div>
+
+                ${!isFirst ? `
+                  <div style="padding:10px; border-radius:14px; background:#F5F3FF; border:1px solid var(--border);">
+                    <div style="font-size:11px; font-weight:800; color:var(--primary); margin-bottom:6px;">🧭 이전 경유지에서의 이동방법</div>
+                    <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:4px; margin-bottom:6px;">
+                      ${TRANSIT_PRESETS.map(t => `
+                        <div onclick="selectStopTransit('${t.type}')" style="text-align:center; padding:6px 2px; border-radius:10px; cursor:pointer; font-size:10px; font-weight:700; background:${se.transitType === t.type ? 'var(--primary)' : '#FFF'}; color:${se.transitType === t.type ? '#FFF' : 'var(--text)'}; border:1px solid ${se.transitType === t.type ? 'var(--primary)' : 'var(--border)'};">
+                          <div style="font-size:14px;">${t.emoji}</div>${t.label}
+                        </div>
+                      `).join('')}
+                    </div>
+                    <input type="text" id="stop-form-transit-distance" placeholder="예: 도보 7분 (450m)" value="${esc(se.distanceFromPrev)}" oninput="state.ui.stopEditor.distanceFromPrev=this.value" style="width:100%; border:1px solid var(--border); border-radius:10px; padding:8px 9px; font-size:12px; background:#FFF;" />
+                  </div>
+                ` : `<input type="hidden" id="stop-form-transit-distance" value="" />`}
+
+                <div>
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                    <div style="font-size:12px; font-weight:800; color:var(--text-sub);">주소</div>
+                    ${se.gps ? `<span style="font-size:11px; font-weight:800; color:#2DD4A0;">✓ GPS 연동됨</span>` : ''}
+                  </div>
+                  <input type="text" id="stop-form-address" placeholder="예: 서울 성동구 서울숲길 15" value="${esc(se.address)}" oninput="state.ui.stopEditor.address=this.value" style="width:100%; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
+                </div>
+
+                <div style="padding:12px; border-radius:16px; background:#F8F8F6; border:1px solid var(--border); display:flex; flex-direction:column; gap:8px;">
+                  <div style="font-size:12px; font-weight:900;">📷 경유지 사진 &amp; GPS 위치</div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                    <button class="cta-btn" style="padding:9px; font-size:12px;" onclick="startStepCamera()">📸 사진 촬영</button>
+                    <button class="cta-btn" style="padding:9px; font-size:12px; background:${se.gps ? '#2DD4A0' : '#FFF'}; color:${se.gps ? '#FFF' : 'var(--text)'}; border:1px solid var(--border);" ${se.gpsLoading ? 'disabled' : ''} onclick="getStopEditorGps()">
+                      ${se.gpsLoading ? '⏳ 위치 탐색중' : (se.gps ? '✓ GPS 갱신' : '📍 GPS 위치 조회')}
+                    </button>
+                  </div>
+                  <label class="cta-btn" style="padding:9px; font-size:12px; background:#FFF; color:var(--text); border:1px solid var(--border); text-align:center; cursor:pointer;">
+                    📁 파일 업로드
+                    <input type="file" accept="image/*" style="display:none;" onchange="handleStopFileInput(event)" />
+                  </label>
+
+                  ${se.gps ? `
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-radius:10px; background:#E9FBF3; font-size:11px; color:#0E9F6E;">
+                      <span>📍 ${esc(se.gps.formattedText)}${se.gps.accuracy ? ` (오차 ±${se.gps.accuracy}m)` : ''}</span>
+                      <span style="cursor:pointer; font-weight:800;" onclick="clearStopEditorGps()">✕</span>
+                    </div>
+                  ` : ''}
+                  ${se.gpsError ? `<div style="font-size:11px; color:#E4572E;">${esc(se.gpsError)}</div>` : ''}
+
+                  ${se.cameraOpen ? `
+                    <div style="position:relative; border-radius:14px; overflow:hidden; background:#000; border:2px solid var(--primary);">
+                      <video id="step-camera-video" autoplay playsinline muted style="width:100%; aspect-ratio:4/3; object-fit:cover; display:block;"></video>
+                      <div style="position:absolute; top:8px; right:8px;">
+                        <button class="icon-btn" onclick="switchStepCameraFacing()">🔄</button>
+                      </div>
+                      <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; background:rgba(0,0,0,0.6);">
+                        <button style="background:none; border:none; color:#FFF; font-size:12px; font-weight:700; cursor:pointer;" onclick="stopStepCamera()">닫기</button>
+                        <button style="width:48px; height:48px; border-radius:50%; background:#FFF; border:4px solid rgba(255,255,255,0.4); cursor:pointer;" onclick="captureStepPhoto()"></button>
+                        <span style="width:32px;"></span>
+                      </div>
+                    </div>
+                    ${se.cameraError ? `<div style="font-size:11px; color:#FF9B9B;">${esc(se.cameraError)}</div>` : ''}
+                  ` : ''}
+
+                  ${se.photoUrl ? `
+                    <div style="position:relative; border-radius:12px; overflow:hidden; height:120px;">
+                      <img src="${esc(se.photoUrl)}" style="width:100%; height:100%; object-fit:cover;" />
+                      <button class="icon-btn" style="position:absolute; top:6px; right:6px; width:26px; height:26px; font-size:12px;" onclick="clearStopPhoto()">✕</button>
+                    </div>
+                    <input type="text" id="stop-form-photo-caption" placeholder="사진 설명" value="${esc(se.photoCaption)}" oninput="state.ui.stopEditor.photoCaption=this.value" style="border:1px solid var(--border); border-radius:10px; padding:8px 10px; font-size:12px;" />
+                  ` : ''}
+                </div>
+
+                <input type="text" id="stop-form-cost" placeholder="예상 비용(원)" value="${esc(se.cost)}" oninput="state.ui.stopEditor.cost=this.value" inputmode="numeric" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px;" />
+
+                <textarea id="stop-form-desc" placeholder="장소에 대한 소개나 추천 이유를 적어주세요." oninput="state.ui.stopEditor.description=this.value" style="width:100%; height:56px; border-radius:12px; border:1px solid var(--border); padding:10px; font-size:12px; resize:none;">${esc(se.description)}</textarea>
+
+                <button class="cta-btn" style="padding:12px; font-size:14px;" onclick="saveStopEditor()">${se.editingIndex === null ? '경유지 등록' : '수정 완료'}</button>
               </div>
             </div>
           `;
@@ -3111,12 +3271,12 @@
 
         root.innerHTML = html;
 
-        // 4b. Reattach live camera stream (innerHTML replacement drops the <video> element's srcObject)
-        if (state.ui.cameraActive && window._mediaStream) {
-          const cameraVideo = document.getElementById('camera-video');
-          if (cameraVideo && cameraVideo.srcObject !== window._mediaStream) {
-            cameraVideo.srcObject = window._mediaStream;
-            cameraVideo.play().catch(() => {});
+        // 4b. Reattach step-editor camera stream (innerHTML replacement drops the <video> element's srcObject)
+        if (state.ui.stopEditor && state.ui.stopEditor.cameraOpen && window._stepMediaStream) {
+          const stepCameraVideo = document.getElementById('step-camera-video');
+          if (stepCameraVideo && stepCameraVideo.srcObject !== window._stepMediaStream) {
+            stepCameraVideo.srcObject = window._stepMediaStream;
+            stepCameraVideo.play().catch(() => {});
           }
         }
 
@@ -3148,7 +3308,9 @@
       document.addEventListener('keydown', e => {
         if (e.key !== 'Escape') return;
         if (state.ui.loginSheet && !state.user.isLoggedIn) return; // 최초 로그인 유도는 Esc로 닫지 않음
-        if (state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.cameraActive || state.ui.loginSheet || state.ui.profileSheet) {
+        if (state.ui.stopEditor) {
+          closeStopEditor();
+        } else if (state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.loginSheet || state.ui.profileSheet) {
           closeSheet();
         } else if (state.ui.followRouteId) {
           closeFollowRoute();
