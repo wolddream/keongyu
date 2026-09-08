@@ -375,8 +375,8 @@
                 kakaoLoggedIn: true,
                 kakaoProfileImage: profile.profile_image_url || profile.profile_image || null
               });
+              closeSheet(); // ui.loginSheet를 먼저 비운 뒤 저장해야 새로고침해도 로그인 시트가 재노출되지 않음
               safeSave();
-              closeSheet();
               render();
               showToast(`환영해요, ${esc(nickname)}님! 👋`);
             })
@@ -396,8 +396,8 @@
             isLoggedIn: true,
             kakaoLoggedIn: true
           });
-          safeSave();
           closeSheet();
+          safeSave();
           render();
           showToast(`환영해요, ${esc(name)}님! 👋`);
         }
@@ -451,8 +451,8 @@
           provider: 'email',
           isLoggedIn: true
         });
-        safeSave();
         closeSheet();
+        safeSave();
         render();
         showToast(`환영해요, ${esc(namePart)}님! 👋`);
       };
@@ -464,8 +464,8 @@
           isLoggedIn: false
         });
         try { localStorage.setItem('keongyu_skip_login', '1'); } catch (e) {}
-        safeSave();
         closeSheet();
+        safeSave();
         render();
         showToast('익명으로 둘러보는 중 👀');
       };
