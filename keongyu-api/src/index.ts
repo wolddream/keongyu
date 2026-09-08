@@ -3,9 +3,10 @@
  *
  * Endpoints:
  *   GET  /api/routes                 -> list routes from D1
- *   POST /api/routes                 -> create a route (+ optional image upload to R2, Turnstile-protected)
+ *   POST /api/routes                 -> create a route (+ optional image upload to R2)
  *   POST /api/collab/join            -> add a participant to a route
- *   POST /api/chat                   -> insert a chat message (Turnstile-protected; DO broadcast: 5️⃣ 단계에서 연결)
+ *   POST /api/chat                   -> insert a chat message (DO broadcast: 5️⃣ 단계에서 연결)
+ *   ※ Turnstile 봇 방지는 사용자 요청으로 중단됨 (verifyTurnstile()는 남겨뒀지만 미호출)
  *   GET  /oauth/kakao/callback       -> Kakao OAuth redirect target (6️⃣ 인증 & 카카오)
  *   GET  /api/admin/verify           -> checks X-ADMIN-TOKEN header against env.ADMIN_TOKEN (admin.html auth gate)
  *
@@ -206,10 +207,9 @@ async function handlePostRoutes(request: Request, env: Env): Promise<Response> {
 		return json({ error: "title and creator_id are required" }, 400);
 	}
 
-	const humanVerified = await verifyTurnstile(turnstileToken, request.headers.get("CF-Connecting-IP"), env.TURNSTILE_SECRET_KEY);
-	if (!humanVerified) {
-		return json({ error: "Turnstile verification failed" }, 403);
-	}
+	// Turnstile 검증은 사용자 요청으로 중단 (프론트 위젯도 함께 제거됨). 재활성화하려면
+	// verifyTurnstile() 호출 + 403 반환을 되살리고 프론트에 위젯을 다시 붙이면 됩니다.
+	void turnstileToken;
 
 	let imageUrl: string | null = null;
 	if (imageFile) {
@@ -267,10 +267,8 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
 		return json({ error: "route_id, user_id and text are required" }, 400);
 	}
 
-	const humanVerified = await verifyTurnstile(body["cf-turnstile-response"], request.headers.get("CF-Connecting-IP"), env.TURNSTILE_SECRET_KEY);
-	if (!humanVerified) {
-		return json({ error: "Turnstile verification failed" }, 403);
-	}
+	// Turnstile 검증은 사용자 요청으로 중단 (프론트 위젯도 함께 제거됨).
+	void env.TURNSTILE_SECRET_KEY;
 
 	const id = uid("c");
 	await env.DB.prepare(

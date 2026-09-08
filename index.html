@@ -262,15 +262,8 @@
     <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js"></script>
     <!-- Cloudflare Web Analytics (8️⃣ 배포 & 모니터링) -->
     <script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "bb05efd24a8447c8ad7e441b94963742"}'></script>
-    <!-- Cloudflare Turnstile (8️⃣ 배포 & 모니터링: 봇 방지) -->
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-    <style>
-      .turnstile-overlay {
-        position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
-        z-index: 150; background: #FFF; border-radius: 16px; padding: 12px 14px;
-        box-shadow: 0 6px 20px rgba(0,0,0,0.18); border: 1px solid var(--border, #E5E8EB);
-      }
-    </style>
+    <!-- Cloudflare Turnstile 봇 방지(8️⃣ 배포 & 모니터링)는 사용자 요청으로 비활성화됨.
+         재활성화 방법은 git log(showTurnstile/hideTurnstile 커밋) 참고. -->
   </head>
   <body>
     <div id="app-frame">
@@ -284,13 +277,6 @@
 
     <!-- Bottom Toast -->
     <div id="toast" class="toast-box"></div>
-
-    <!-- Turnstile 봇 방지 위젯 (8️⃣ 배포 & 모니터링). #root 밖에 고정 배치해서
-         전체 innerHTML 재렌더링에도 위젯이 초기화/파괴되지 않게 합니다. -->
-    <div id="turnstile-widget" class="turnstile-overlay" style="display:none;">
-      <div style="font-size:11px; font-weight:700; color:var(--text-sub); margin-bottom:6px;">사람인지 확인해주세요</div>
-      <div id="turnstile-target"></div>
-    </div>
 
     <script>
       // ==========================================
@@ -506,40 +492,9 @@
         showToast('로그아웃했어요.');
       };
 
-      // ==========================================
-      // -0.5 Turnstile 봇 방지 (8️⃣ 배포 & 모니터링)
-      // ==========================================
-      // #turnstile-widget/#turnstile-target live outside #root, so they survive render()'s
-      // full innerHTML replacement — the widget is mounted once and only reset, never destroyed.
-      const TURNSTILE_SITE_KEY = '0x4AAAAAAEsqlfcMjUooahhi';
-      window._turnstileWidgetId = null;
-      window._turnstileToken = null;
-
-      window.showTurnstile = function() {
-        const overlay = document.getElementById('turnstile-widget');
-        const wasHidden = !overlay || overlay.style.display !== 'block';
-        if (overlay) overlay.style.display = 'block';
-        if (!window.turnstile) return; // async script may not have loaded yet
-        if (window._turnstileWidgetId === null) {
-          const target = document.getElementById('turnstile-target');
-          if (!target) return;
-          window._turnstileWidgetId = turnstile.render(target, {
-            sitekey: TURNSTILE_SITE_KEY,
-            callback: token => { window._turnstileToken = token; },
-            'expired-callback': () => { window._turnstileToken = null; }
-          });
-        } else if (wasHidden) {
-          // Only reset on the hidden -> shown transition, not on every re-render while
-          // the sheet stays open (e.g. clicking a star rating shouldn't wipe the check).
-          turnstile.reset(window._turnstileWidgetId);
-          window._turnstileToken = null;
-        }
-      };
-
-      window.hideTurnstile = function() {
-        const overlay = document.getElementById('turnstile-widget');
-        if (overlay) overlay.style.display = 'none';
-      };
+      // Turnstile 봇 방지(8️⃣ 배포 & 모니터링)는 사용자 요청으로 중단했습니다.
+      // 재활성화 시 필요한 것: <head>의 Turnstile <script> 주석 해제, showTurnstile()/
+      // hideTurnstile() 구현 복원(git log에서 확인 가능), render()의 표시 로직 복원.
 
       // ==========================================
       // 0. Constants & Utilities
@@ -3071,14 +3026,6 @@
         }
 
         root.innerHTML = html;
-
-        // 4a. Turnstile 봇 방지 위젯: 업로드/후기 시트가 열려있을 때만 표시 (#turnstile-widget은
-        // #root 밖에 있어 이 innerHTML 교체로 파괴되지 않으므로 매 render마다 안전하게 체크 가능).
-        if (state.ui.bottomSheet === 'upload' || state.ui.bottomSheet === 'finishCertification') {
-          showTurnstile();
-        } else {
-          hideTurnstile();
-        }
 
         // 4b. Reattach live camera stream (innerHTML replacement drops the <video> element's srcObject)
         if (state.ui.cameraActive && window._mediaStream) {
