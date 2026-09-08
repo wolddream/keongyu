@@ -1501,6 +1501,28 @@
         setTimeout(() => addParticipant(routeId, name), 2000);
       };
 
+      // 카카오톡 친구 선택 → 선택된 친구를 함께가기 참여자로 바로 추가
+      window.inviteFriendsWithKakao = function(routeId) {
+        if (!window.Kakao || !Kakao.isInitialized()) {
+          showToast('카카오 SDK가 초기화되지 않았어요.');
+          return;
+        }
+        if (!Kakao.Picker || typeof Kakao.Picker.selectFriends !== 'function') {
+          showToast('이 환경에서는 카카오톡 친구 선택을 사용할 수 없어요.');
+          return;
+        }
+        Kakao.Picker.selectFriends({ title: '함께 갈 친구 선택', maxPickableCount: 5 })
+          .then(res => {
+            const friends = (res && res.users) || [];
+            if (!friends.length) return;
+            friends.forEach(f => addParticipant(routeId, f.displayName || f.nickname || '카카오친구'));
+            showToast(`${friends.length}명을 초대했어요! 👥`);
+          })
+          .catch(() => {
+            showToast('카카오 친구 선택에 실패했어요. 카카오 로그인이 필요할 수 있어요.');
+          });
+      };
+
       window.startCollab = function(routeId) {
         const route = state.routes.find(r => r.id === routeId);
         if (!route) return;
@@ -2595,8 +2617,9 @@
 
                 <div>
                   <div style="font-size:13px; font-weight:800; margin-bottom:8px;">친구 초대</div>
+                  <button class="btn-secondary" style="width:100%; background:#FEE500; color:#3C1E1E; margin-bottom:8px;" onclick="inviteFriendsWithKakao('${cRoute.id}')">💬 카카오톡 친구 선택해서 초대</button>
                   <div style="display:flex; gap:8px;">
-                    <input type="text" id="collab-invite-name" placeholder="친구 이름 입력" style="flex:1; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
+                    <input type="text" id="collab-invite-name" placeholder="친구 이름 입력 (또는 링크로 초대)" style="flex:1; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
                     <button class="btn-secondary" onclick="generateCollabInvite('${cRoute.id}')">초대 링크 생성</button>
                   </div>
                 </div>
