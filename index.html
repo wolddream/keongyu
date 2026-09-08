@@ -405,7 +405,8 @@
           const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
           const payload = JSON.parse(new TextDecoder().decode(bytes));
           if (payload.error) {
-            console.error('[카카오 로그인 실패]', payload.error, payload.detail);
+            window.__lastKakaoError = payload; // 디버깅용: 브라우저 콘솔/자동화에서 window.__lastKakaoError로 조회
+            console.error('[카카오 로그인 실패]', JSON.stringify(payload));
             showToast('카카오 로그인에 실패했어요. (' + payload.error + ')');
             return false;
           }
