@@ -142,6 +142,7 @@
         background: none; border: none; font-size: 13px; font-weight: 700; color: #FF4B6E;
         display: flex; align-items: center; gap: 4px; cursor: pointer;
       }
+      .like-btn.liked { opacity: 0.55; cursor: default; }
       .card-title { font-size: 16px; font-weight: 800; line-height: 1.35; }
       .card-pills { display: flex; gap: 6px; flex-wrap: wrap; }
       .info-pill {
@@ -769,6 +770,7 @@
             stickersEarned: 2,
             completedRoutes: [],
             followCheckins: {},
+            likedRoutes: [], // 이미 하트(좋아요) 누른 루트 id 목록 - 접속(브라우저)당 루트별 1회 제한
             kakaoLoggedIn: false,
             kakaoProfileImage: null
           },
@@ -828,6 +830,7 @@
         if (state.user.email === undefined) state.user.email = null;
         if (state.user.provider === undefined) state.user.provider = 'anon';
         if (state.user.isLoggedIn === undefined) state.user.isLoggedIn = false;
+        if (!Array.isArray(state.user.likedRoutes)) state.user.likedRoutes = [];
         if (state.ui.loginSheet === undefined) state.ui.loginSheet = null;
         if (state.ui.profileSheet === undefined) state.ui.profileSheet = false;
         if (!state.ui.collabSheet) state.ui.collabSheet = null;
@@ -985,7 +988,12 @@
       window.toggleLike = function(routeId) {
         const route = state.routes.find(r => r.id === routeId);
         if (!route) return;
+        if (state.user.likedRoutes.includes(routeId)) {
+          showToast('이미 하트를 눌렀어요 ❤️');
+          return; // 접속(브라우저)당 루트별로 한 번만 가능
+        }
         route.likes = (route.likes || 0) + 1;
+        state.user.likedRoutes.push(routeId);
         saveState();
         render();
       };
@@ -2024,6 +2032,7 @@
               const notifType = state.subscriptions[r.creator]?.notif || 'all';
               const bellIcon = notifType === 'none' ? '🔕' : notifType === 'personal' ? '🔔' : '🔔';
               const bellColor = notifType === 'none' ? '#999' : notifType === 'personal' ? '#FFC61C' : 'var(--primary)';
+              const isLiked = state.user.likedRoutes.includes(r.id);
 
               html += `
                 <div class="route-card">
@@ -2032,8 +2041,8 @@
                       <span class="purpose-pill">${r.purpose}</span>
                       ${r.isCollaborative ? `<span class="collab-pill">👥 함께가는 중 (${(r.participants || []).length}명)</span>` : ''}
                     </div>
-                    <button class="like-btn" onclick="toggleLike('${r.id}')">
-                      <span>❤️</span>
+                    <button class="like-btn ${isLiked ? 'liked' : ''}" onclick="toggleLike('${r.id}')">
+                      <span>${isLiked ? '💗' : '❤️'}</span>
                       <span>${r.likes || 0}</span>
                     </button>
                   </div>
