@@ -270,6 +270,48 @@
       // Kakao.Picker.selectFriends({ title: '함께 갈 친구 선택', maxPickableCount: 5 })
       //   .then(friends => friends.users.forEach(f => addParticipant(routeId, f.displayName)));
 
+      // Kakao Login: 로그인 성공 시 카카오 프로필(닉네임/프로필사진)을 내 프로필에 반영.
+      // 'friends' 동의항목을 포함해야 이후 Kakao.Picker.selectFriends()가 정상 동작합니다.
+      window.kakaoLogin = function() {
+        if (!window.Kakao || !Kakao.isInitialized()) {
+          showToast('카카오 SDK가 초기화되지 않았어요.');
+          return;
+        }
+        Kakao.Auth.login({ scope: 'friends,profile_nickname,profile_image' })
+          .then(() => Kakao.API.request({ url: '/v2/user/me' }))
+          .then(res => {
+            const account = res.kakao_account || {};
+            const profile = account.profile || res.properties || {};
+            const nickname = profile.nickname || '카카오유저';
+            const profileImage = profile.profile_image_url || profile.profile_image || null;
+            state.user.name = nickname;
+            state.user.kakaoLoggedIn = true;
+            state.user.kakaoProfileImage = profileImage;
+            saveState();
+            showToast(`${nickname}님으로 로그인했어요! 👋`);
+            render();
+          })
+          .catch(() => {
+            showToast('카카오 로그인에 실패했어요.');
+          });
+      };
+
+      window.kakaoLogout = function() {
+        if (!window.Kakao || !Kakao.isInitialized() || !Kakao.Auth.getAccessToken()) {
+          state.user.kakaoLoggedIn = false;
+          saveState();
+          render();
+          return;
+        }
+        Kakao.Auth.logout(() => {
+          state.user.kakaoLoggedIn = false;
+          state.user.kakaoProfileImage = null;
+          saveState();
+          showToast('카카오 로그아웃했어요.');
+          render();
+        });
+      };
+
       // ==========================================
       // 0. Constants & Utilities
       // ==========================================
@@ -537,7 +579,9 @@
             invites: 3,
             stickersEarned: 2,
             completedRoutes: [],
-            followCheckins: {}
+            followCheckins: {},
+            kakaoLoggedIn: false,
+            kakaoProfileImage: null
           },
           custom: {
             owned: {
@@ -586,6 +630,8 @@
 
       function normalizeState() {
         // Backfill fields introduced after this state may have been saved to localStorage.
+        if (state.user.kakaoLoggedIn === undefined) state.user.kakaoLoggedIn = false;
+        if (state.user.kakaoProfileImage === undefined) state.user.kakaoProfileImage = null;
         if (!state.ui.collabSheet) state.ui.collabSheet = null;
         if (state.ui.collabEditSheet === undefined) state.ui.collabEditSheet = null;
         if (state.ui.charge === undefined) state.ui.charge = { pack: null, method: null };
@@ -1871,6 +1917,14 @@
                   </div>
                 </div>
               </div>
+              ${state.user.kakaoLoggedIn ? `
+                <div style="display:flex; align-items:center; justify-content:space-between; background:#FFFBEA; border-radius:12px; padding:8px 12px;">
+                  <span style="font-size:12px; font-weight:700; color:#8A6D00;">💬 카카오 계정으로 로그인됨</span>
+                  <button class="step-mini-btn" onclick="kakaoLogout()">로그아웃</button>
+                </div>
+              ` : `
+                <button class="btn-secondary" style="background:#FEE500; color:#3C1E1E; width:100%; padding:10px;" onclick="kakaoLogin()">💬 카카오 로그인</button>
+              `}
             </div>
 
             <!-- Subscribed Creators Horizontal Scroll -->
