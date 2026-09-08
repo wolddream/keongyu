@@ -2213,10 +2213,10 @@
                       ` : `
                         <span style="font-size:11px; font-weight:700; color:var(--primary); background:#F0F0FF; padding:3px 8px; border-radius:12px;">내 루트</span>
                       `}
-                      <button class="icon-btn" style="width:30px; height:30px; font-size:13px;" onclick="startFollowRoute('${r.id}'); openShareSheet('${r.id}')" title="공유">
+                      <button class="icon-btn" style="width:30px; height:30px; font-size:13px;" onclick="startFollowRoute('${r.id}')" title="공유">
                         ↗
                       </button>
-                      <button class="btn-secondary" onclick="startFollowRoute('${r.id}'); openCollabSheet('${r.id}')">👥 함께가기</button>
+                      <button class="btn-secondary" onclick="startFollowRoute('${r.id}')">👥 함께가기</button>
                       <button class="cta-btn" onclick="startFollowRoute('${r.id}')">
                         따라가기
                       </button>
@@ -2351,8 +2351,8 @@
                     <div style="display:flex; justify-content:space-between; align-items:center; padding-top:6px; border-top:1px solid #F0F0EE; flex-wrap:wrap; gap:6px;">
                       <button class="cta-btn" style="background:#555;" onclick="startFollowRoute('${r.id}')">미리보기</button>
                       <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                        <button class="btn-secondary" onclick="startFollowRoute('${r.id}'); openCollabSheet('${r.id}')">👥 함께가기</button>
-                        <button class="cta-btn" style="background:#FFF; color:var(--text); border:1px solid var(--border);" onclick="startFollowRoute('${r.id}'); openShareSheet('${r.id}')">공유</button>
+                        <button class="btn-secondary" onclick="startFollowRoute('${r.id}')">👥 함께가기</button>
+                        <button class="cta-btn" style="background:#FFF; color:var(--text); border:1px solid var(--border);" onclick="startFollowRoute('${r.id}')">공유</button>
                         <button class="cta-btn" onclick="startFollowRoute('${r.id}')">따라가기</button>
                         <button class="cta-btn" style="background:#FFF; color:var(--danger, #FF4242); border:1px solid var(--danger, #FF4242);" onclick="deleteMyRoute('${r.id}')">삭제</button>
                       </div>
@@ -2480,7 +2480,11 @@
                     <div class="avatar-wrapper" style="width:24px; height:24px; font-size:13px; flex-shrink:0;">${getAvatarDisplay(route.creator)}</div>
                     <div style="font-size:14px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(route.title)}</div>
                   </div>
-                  <div style="font-size:12px; font-weight:800; color:var(--primary); flex-shrink:0;">${state.ui.followStep + 1}/${totalSteps}</div>
+                  <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                    <span style="font-size:12px; font-weight:800; color:var(--primary);">${state.ui.followStep + 1}/${totalSteps}</span>
+                    <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openShareSheet('${route.id}')" title="공유">↗</button>
+                    <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openCollabSheet('${route.id}')" title="함께가기">👥</button>
+                  </div>
                 </div>
 
                 ${route.isCollaborative ? `
