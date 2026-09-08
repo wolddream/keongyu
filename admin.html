@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KEONGYU Admin</title>
+    <style>
+      :root {
+        --primary: #8B6CFF;
+        --mint: #2DD4A0;
+        --danger: #FF4242;
+        --peach: #FF8C4B;
+        --bg: #F5F5F0;
+        --card: #FFFFFF;
+        --text: #191F28;
+        --text-sub: #6B7684;
+        --border: #E5E8EB;
+        --sidebar: #111111;
+        --sidebar-sub: #9A9A9A;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      /* PC 전용 (1024px 미만은 안내만 표시) */
+      #mobile-block { display: none; }
+      @media (max-width: 1023px) {
+        #admin-shell { display: none; }
+        #mobile-block {
+          display: flex; min-height: 100vh; align-items: center; justify-content: center;
+          flex-direction: column; gap: 10px; text-align: center; padding: 40px;
+        }
+      }
+
+      #admin-shell { display: flex; min-height: 100vh; min-width: 1024px; }
+
+      /* Sidebar */
+      #sidebar {
+        width: 220px; flex-shrink: 0; background: var(--sidebar); color: #FFF;
+        display: flex; flex-direction: column; padding: 20px 0;
+      }
+      #sidebar .logo { padding: 0 20px 20px; font-size: 17px; font-weight: 900; }
+      #sidebar .logo span { color: var(--primary); }
+      #sidebar nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+      #sidebar .nav-item {
+        display: flex; align-items: center; gap: 10px; padding: 12px 20px;
+        background: none; border: none; color: #C4C4C4; font-size: 13px; font-weight: 700;
+        text-align: left; cursor: pointer; width: 100%;
+      }
+      #sidebar .nav-item:hover { background: rgba(255,255,255,0.05); color: #FFF; }
+      #sidebar .nav-item.active { background: rgba(139,108,255,0.18); color: #FFF; border-right: 3px solid var(--primary); }
+      #sidebar .sidebar-footer { padding: 14px 20px; font-size: 10px; color: var(--sidebar-sub); border-top: 1px solid #262626; }
+
+      /* Main */
+      #main {
+        flex: 1; max-width: 1200px; padding: 28px 36px; overflow-x: auto;
+      }
+      #main h1 { font-size: 20px; font-weight: 900; margin-bottom: 4px; }
+      #main .subtitle { font-size: 12px; color: var(--text-sub); margin-bottom: 20px; }
+
+      .notice-banner {
+        background: #FFF6E5; border: 1px solid #FFE1A8; color: #8A6200; font-size: 12px;
+        border-radius: 10px; padding: 10px 14px; margin-bottom: 16px;
+      }
+
+      .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+      .kpi-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+      .kpi-card .label { font-size: 12px; color: var(--text-sub); font-weight: 700; }
+      .kpi-card .value { font-size: 24px; font-weight: 900; margin-top: 6px; }
+
+      .panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 20px; }
+      .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+      .panel-header h2 { font-size: 15px; font-weight: 900; }
+
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th { text-align: left; color: var(--text-sub); font-weight: 700; font-size: 11px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+      td { padding: 10px; border-bottom: 1px solid #F2F2F0; vertical-align: middle; }
+      tr:last-child td { border-bottom: none; }
+
+      .chip { display: inline-block; background: #F5F5F0; color: var(--text-sub); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+      .badge { display: inline-block; font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 10px; }
+      .badge.public { background: rgba(45,212,160,0.15); color: #1D9C77; }
+      .badge.private { background: rgba(255,66,66,0.12); color: var(--danger); }
+      .badge.normal { background: #EEF; color: #556; }
+
+      .btn { border: none; border-radius: 10px; padding: 6px 12px; font-size: 12px; font-weight: 800; cursor: pointer; }
+      .btn-primary { background: var(--primary); color: #FFF; }
+      .btn-mint { background: var(--mint); color: #FFF; }
+      .btn-danger { background: var(--danger); color: #FFF; }
+      .btn-ghost { background: #F0F0EE; color: var(--text); }
+      .btn + .btn { margin-left: 6px; }
+
+      .empty-row td { text-align: center; color: #AAA; padding: 30px; font-size: 13px; }
+
+      .settings-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+      .settings-grid input[type="text"], .settings-grid input[type="password"], .settings-grid textarea {
+        width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 13px; margin: 8px 0;
+      }
+      .settings-grid textarea { height: 100px; resize: vertical; font-family: inherit; }
+      .cf-link { display: block; font-size: 13px; color: var(--primary); font-weight: 700; padding: 6px 0; text-decoration: none; }
+      .cf-link:hover { text-decoration: underline; }
+      .hint { font-size: 11px; color: #999; margin-top: 4px; }
+    </style>
+  </head>
+  <body>
+    <div id="admin-shell">
+      <aside id="sidebar">
+        <div class="logo">KEONGYU <span>Admin</span></div>
+        <nav id="sidebar-nav">
+          <button class="nav-item" data-tab="dashboard">📊 대시보드</button>
+          <button class="nav-item" data-tab="routes">🗺️ 루트 관리</button>
+          <button class="nav-item" data-tab="reports">🚨 신고 관리</button>
+          <button class="nav-item" data-tab="users">👤 사용자 관리</button>
+          <button class="nav-item" data-tab="payments">💰 결제/별사탕</button>
+          <button class="nav-item" data-tab="collab">👥 함께가기</button>
+          <button class="nav-item" data-tab="settings">⚙️ 설정</button>
+        </nav>
+        <div class="sidebar-footer">Cloudflare D1+R2 v5.1 admin</div>
+      </aside>
+      <main id="main"></main>
+    </div>
+
+    <div id="mobile-block">
+      <div style="font-size:32px;">🖥️</div>
+      <div style="font-size:16px; font-weight:800;">PC 화면(1024px 이상)에서 이용해주세요</div>
+      <div style="font-size:12px; color:#888;">KEONGYU Admin은 관리자용 데스크톱 전용 페이지입니다.</div>
+    </div>
+
+    <script>
+      // ==========================================
+      // 0. Constants
+      // ==========================================
+      const STORAGE_KEY = 'keongyu_v1'; // 메인 앱(index.html)과 동일한 키
+      // 데모 관리자 토큰. 실제 배포에서는 여기 하드코딩된 값 대신 서버(Workers) 검증으로 교체해야 합니다.
+      // TODO(보안): admin.keongyu.app 서브도메인 + Cloudflare Zero Trust Access로 앱단 인증 이전에 IP/세션 게이트를 걸고,
+      //   각 fetch('/api/admin/*') 요청은 Workers에서 env.ADMIN_TOKEN(시크릿)과 X-ADMIN-TOKEN 헤더를 비교해 검증.
+      //   -> https://dash.cloudflare.com/ -> Zero Trust -> Access -> Applications -> admin.keongyu.app 보호 설정
+      const ADMIN_TOKEN = '0000';
+
+      const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+      function esc(str) {
+        if (str === null || str === undefined) return '';
+        return String(str).replace(/[&<>"']/g, c => ESC_MAP[c]);
+      }
+
+      // ==========================================
+      // 1. 데이터 로딩 (localStorage keongyu_v1)
+      // ==========================================
+      // TODO(D1 연동): 아래 loadAppState()는 "이 브라우저의" localStorage만 읽습니다.
+      // 실제 다중 사용자 데이터를 보려면 D1 기반 API로 교체:
+      //   const res = await fetch('/api/admin/routes', { headers: { 'X-ADMIN-TOKEN': ADMIN_TOKEN } });
+      //   const { routes } = await res.json();
+      // 아래 D1 스키마도 함께 참고 (schema.sql에 이미 반영됨 - wrangler d1 execute로 keongyu-db에 생성 완료):
+      //
+      // CREATE TABLE reports (id TEXT PRIMARY KEY, route_id TEXT, reason TEXT, reporter_id TEXT, status TEXT DEFAULT 'open', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+      // CREATE TABLE admin_logs (id TEXT PRIMARY KEY, admin_id TEXT, action TEXT, target_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+
+      function loadAppState() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) return JSON.parse(raw);
+        } catch (e) {}
+        return null;
+      }
+
+      function persistAppState() {
+        if (!appState) return;
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+        } catch (e) {
+          alert('저장 공간이 부족합니다.');
+        }
+      }
+
+      let appState = loadAppState();
+
+      // reports / pointsHistory는 메인 앱 state에 아직 존재하지 않는 필드라 (D1 전용) 항상 데모 더미로 대체됩니다.
+      const DUMMY_REPORTS = [
+        { id: 'rep_1', routeId: 'r3', reason: '부적절한 사진', reporter: '익명123', time: '2시간 전' },
+        { id: 'rep_2', routeId: 'r6', reason: '스팸/광고성 루트', reporter: '익명456', time: '어제' },
+        { id: 'rep_3', routeId: 'r8', reason: '허위 정보', reporter: '익명789', time: '3일 전' }
+      ];
+      const DUMMY_USERS = [
+        { id: 'demo_u1', name: '성수러버민지', points: 340 },
+        { id: 'demo_u2', name: '힙스터준', points: 210 },
+        { id: 'demo_u3', name: '댕댕산책러', points: 95 }
+      ];
+      const DUMMY_POINTS_HISTORY = [
+        { user: '성수러버민지', amount: 700, reason: '충전 (5,000원)', time: '10분 전' },
+        { user: '힙스터준', amount: -8, reason: '루트 공유 리워드 차감', time: '1시간 전' },
+        { user: '나', amount: 360, reason: '충전 (3,000원)', time: '어제' }
+      ];
+
+      let reports = DUMMY_REPORTS.slice();
+      const users = (appState && appState.user) ? [appState.user] : DUMMY_USERS;
+      const pointsHistory = DUMMY_POINTS_HISTORY;
+
+      function getRoutes() { return (appState && appState.routes) || []; }
+
+      // r_<epoch ms> 형태 id(로컬 업로드로 생성된 루트)에서만 생성 시각을 복원할 수 있습니다.
+      // 시드 데이터(r1~r9)나 API로 생성된 id(r_<base36>...)는 시각 정보가 없어 '—'로 표시됩니다.
+      function extractCreatedAt(route) {
+        const m = /^r_(\d{10,})$/.exec(route.id || '');
+        if (!m) return null;
+        const ts = parseInt(m[1], 10);
+        return isNaN(ts) ? null : ts;
+      }
+      function formatDate(ts) {
+        if (!ts) return '—';
+        const d = new Date(ts);
+        return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+      }
+
+      // ==========================================
+      // 2. 탭 렌더링
+      // ==========================================
+      let currentTab = 'dashboard';
+
+      function renderTab(tab) {
+        currentTab = tab;
+        document.querySelectorAll('#sidebar-nav .nav-item').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.tab === tab);
+        });
+        const main = document.getElementById('main');
+        const renderers = {
+          dashboard: renderDashboard,
+          routes: renderRoutes,
+          reports: renderReports,
+          users: renderUsers,
+          payments: renderPayments,
+          collab: renderCollab,
+          settings: renderSettings
+        };
+        main.innerHTML = (renderers[tab] || renderDashboard)();
+      }
+
+      function noDataBanner() {
+        if (appState) return '';
+        return `<div class="notice-banner">⚠️ 이 브라우저의 localStorage(keongyu_v1)에 메인 앱 데이터가 없습니다. 먼저 <a href="./index.html" style="color:#8A6200; font-weight:800;">메인 앱</a>을 열어 데이터를 만들어주세요.</div>`;
+      }
+
+      function renderDashboard() {
+        const routes = getRoutes();
+        const kpi = {
+          total: routes.length,
+          publicCount: routes.filter(r => r.isPublic).length,
+          collab: routes.filter(r => r.isCollaborative).length,
+          reports: reports.length
+        };
+        const latest = routes.slice(0, 20); // state.routes는 unshift로 신규 항목이 앞에 오므로 이미 최신순
+        return `
+          <h1>📊 대시보드</h1>
+          <div class="subtitle">전체 현황 요약 (이 브라우저 기준 데모 데이터)</div>
+          ${noDataBanner()}
+          <div class="kpi-grid">
+            <div class="kpi-card"><div class="label">전체 루트</div><div class="value">${kpi.total}</div></div>
+            <div class="kpi-card"><div class="label">공개 루트</div><div class="value">${kpi.publicCount}</div></div>
+            <div class="kpi-card"><div class="label">함께가기</div><div class="value">${kpi.collab}</div></div>
+            <div class="kpi-card"><div class="label">신고 건수</div><div class="value" style="color:var(--danger);">${kpi.reports}</div></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><h2>최신 루트 (최대 20개)</h2></div>
+            <table>
+              <thead><tr><th>제목</th><th>작성자</th><th>상태</th><th>좋아요</th><th>액션</th></tr></thead>
+              <tbody>
+                ${latest.length === 0 ? `<tr class="empty-row"><td colspan="5">등록된 루트가 없습니다.</td></tr>` : latest.map(r => `
+                  <tr>
+                    <td><b>${esc(r.title)}</b></td>
+                    <td>${esc(r.creator)}</td>
+                    <td><span class="badge ${r.isPublic ? 'public' : 'private'}">${r.isPublic ? '공개' : '비공개'}</span></td>
+                    <td>❤️ ${r.likes || 0}</td>
+                    <td>
+                      <button class="btn btn-ghost" onclick="togglePublic('${esc(r.id)}')">${r.isPublic ? '비공개로' : '공개로'}</button>
+                      <button class="btn btn-danger" onclick="deleteRoute('${esc(r.id)}')">삭제</button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      function renderRoutes() {
+        const routes = getRoutes();
+        return `
+          <h1>🗺️ 루트 관리</h1>
+          <div class="subtitle">전체 루트 ${routes.length}개</div>
+          ${noDataBanner()}
+          <div class="panel">
+            <div class="panel-header">
+              <h2>루트 목록</h2>
+              <button class="btn btn-primary" onclick="exportRoutesJSON()">JSON 내보내기</button>
+            </div>
+            <table>
+              <thead><tr><th>ID</th><th>제목</th><th>목적</th><th>참여자</th><th>생성일</th><th>관리</th></tr></thead>
+              <tbody>
+                ${routes.length === 0 ? `<tr class="empty-row"><td colspan="6">등록된 루트가 없습니다.</td></tr>` : routes.map(r => `
+                  <tr>
+                    <td><span class="chip">${esc(r.id)}</span></td>
+                    <td>${esc(r.title)}</td>
+                    <td>${esc(r.purpose)}</td>
+                    <td>${(r.participants || []).length} 👥</td>
+                    <td>${formatDate(extractCreatedAt(r))}</td>
+                    <td>
+                      <button class="btn btn-ghost" onclick="editRouteDemo('${esc(r.id)}')">수정</button>
+                      <button class="btn btn-danger" onclick="deleteRoute('${esc(r.id)}')">삭제</button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      function renderReports() {
+        const routes = getRoutes();
+        return `
+          <h1>🚨 신고 관리</h1>
+          <div class="subtitle">신고 ${reports.length}건 (데모 데이터 — 새로고침 시 초기화됩니다. D1 reports 테이블 연동 전)</div>
+          <div class="panel">
+            <table>
+              <thead><tr><th>루트 ID</th><th>사유</th><th>신고자</th><th>시간</th><th>처리</th></tr></thead>
+              <tbody>
+                ${reports.length === 0 ? `<tr class="empty-row"><td colspan="5">신고가 없습니다.</td></tr>` : reports.map(rep => {
+                  const route = routes.find(r => r.id === rep.routeId);
+                  return `
+                    <tr>
+                      <td><span class="chip">${esc(rep.routeId)}</span>${route ? ` <span style="color:var(--text-sub); font-size:11px;">(${esc(route.title)})</span>` : ''}</td>
+                      <td>${esc(rep.reason)}</td>
+                      <td>${esc(rep.reporter)}</td>
+                      <td>${esc(rep.time)}</td>
+                      <td><button class="btn btn-mint" onclick="resolveReport('${esc(rep.id)}')">처리 완료</button></td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      function renderUsers() {
+        const routes = getRoutes();
+        return `
+          <h1>👤 사용자 관리</h1>
+          <div class="subtitle">사용자 ${users.length}명</div>
+          <div class="notice-banner">⚠️ 이 페이지는 지금 이 브라우저의 localStorage 사용자 1명만 실제 데이터입니다. 나머지는 데모용 예시 사용자이며, 실제 다중 사용자 조회는 D1 users 테이블 연동이 필요합니다.</div>
+          <div class="panel">
+            <table>
+              <thead><tr><th>이름</th><th>포인트</th><th>작성 루트</th><th>상태</th><th>액션</th></tr></thead>
+              <tbody>
+                ${users.map(u => `
+                  <tr>
+                    <td>${esc(u.name)}</td>
+                    <td>⭐ ${u.points || 0}</td>
+                    <td>${routes.filter(r => r.creator === u.name).length}개</td>
+                    <td><span class="badge normal">정상</span></td>
+                    <td>
+                      <button class="btn btn-ghost" onclick="grantPoints('${esc(u.id || u.name)}')">포인트 지급</button>
+                      <button class="btn btn-danger" onclick="suspendUser('${esc(u.id || u.name)}')">정지</button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      function renderPayments() {
+        const todayRevenue = pointsHistory.filter(p => p.amount > 0).reduce((sum, p) => sum + p.amount, 0) * 100;
+        const chargeCount = pointsHistory.filter(p => p.amount > 0).length;
+        return `
+          <h1>💰 결제 / 별사탕</h1>
+          <div class="subtitle">포인트 적립·차감 내역 (데모 데이터 — 실제 매출은 D1 points_history 집계 필요)</div>
+          <div class="kpi-grid" style="grid-template-columns:repeat(2,1fr);">
+            <div class="kpi-card"><div class="label">오늘 매출 (추정, ⭐1개=100원)</div><div class="value">${todayRevenue.toLocaleString()}원</div></div>
+            <div class="kpi-card"><div class="label">충전 건수</div><div class="value">${chargeCount}건</div></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <h2>포인트 내역</h2>
+              <button class="btn btn-primary" onclick="openPortOne()">PortOne 열기</button>
+            </div>
+            <table>
+              <thead><tr><th>유저</th><th>금액</th><th>사유</th><th>시간</th></tr></thead>
+              <tbody>
+                ${pointsHistory.map(p => `
+                  <tr>
+                    <td>${esc(p.user)}</td>
+                    <td style="color:${p.amount > 0 ? 'var(--mint)' : 'var(--danger)'}; font-weight:800;">${p.amount > 0 ? '+' : ''}${p.amount}⭐</td>
+                    <td>${esc(p.reason)}</td>
+                    <td>${esc(p.time)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      function renderCollab() {
+        const collabRoutes = getRoutes().filter(r => r.isCollaborative);
+        return `
+          <h1>👥 함께가기 모니터링</h1>
+          <div class="subtitle">진행 중인 함께가기 ${collabRoutes.length}건</div>
+          ${noDataBanner()}
+          <div class="panel">
+            <table>
+              <thead><tr><th>루트 제목</th><th>참여자</th><th>역할</th><th>댓글/채팅 수</th><th>액션</th></tr></thead>
+              <tbody>
+                ${collabRoutes.length === 0 ? `<tr class="empty-row"><td colspan="5">진행 중인 함께가기가 없습니다.</td></tr>` : collabRoutes.map(r => `
+                  <tr>
+                    <td><b>${esc(r.title)}</b></td>
+                    <td>${esc((r.participants || []).map(p => p.name).join(', ') || '—')}</td>
+                    <td>${esc((r.participants || []).map(p => p.role).join(', ') || '—')}</td>
+                    <td>${(r.comments || []).length}개</td>
+                    <td><button class="btn btn-ghost" onclick="viewChats('${esc(r.id)}')">채팅 보기</button></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <!-- 참고: 실제 실시간 채팅은 keongyu-api Worker의 D1 chats 테이블 + 5️⃣ Durable Objects 브로드캐스트가
+                 소스가 됩니다. 지금 이 표는 메인 앱 localStorage의 route.comments(로컬 발도장 댓글)를 대신 보여줍니다. -->
+          </div>
+        `;
+      }
+
+      function renderSettings() {
+        let savedToken = '';
+        try { savedToken = localStorage.getItem('admin_token') || ''; } catch (e) {}
+        let notice = '';
+        try { notice = localStorage.getItem('keongyu_admin_notice') || ''; } catch (e) {}
+        const acctId = 'c98c81a5b3f4c57e6b9a5a4e60195ece';
+        return `
+          <h1>⚙️ 설정</h1>
+          <div class="subtitle">Cloudflare 리소스 바로가기 · 관리자 인증 · 공지사항</div>
+          <div class="settings-grid">
+            <div class="panel">
+              <h2 style="font-size:14px; font-weight:900; margin-bottom:10px;">☁️ Cloudflare 대시보드</h2>
+              <a class="cf-link" href="https://dash.cloudflare.com/${acctId}/workers-and-pages" target="_blank" rel="noopener">Workers & Pages →</a>
+              <a class="cf-link" href="https://dash.cloudflare.com/${acctId}/workers/d1" target="_blank" rel="noopener">D1 (keongyu-db) →</a>
+              <a class="cf-link" href="https://dash.cloudflare.com/${acctId}/r2/default/buckets/keongyu-images" target="_blank" rel="noopener">R2 (keongyu-images) →</a>
+              <a class="cf-link" href="https://dash.cloudflare.com/${acctId}/workers/services/view/keongyu-api" target="_blank" rel="noopener">Workers (keongyu-api) →</a>
+            </div>
+            <div class="panel">
+              <h2 style="font-size:14px; font-weight:900; margin-bottom:10px;">🔐 관리자 인증</h2>
+              <input type="password" id="admin-pw-input" placeholder="현재: 0000 (데모) - Workers ENV ADMIN_TOKEN으로 교체 필요" />
+              <button class="btn btn-primary" onclick="saveAdminPassword()">저장</button>
+              <div class="hint">⚠️ 데모용 로컬 검증입니다. 여기서 값을 바꿔도 실제 접근 제어는 바뀌지 않습니다 — 실서비스에서는 Workers 환경변수 ADMIN_TOKEN을 서버에서 비교해야 합니다.</div>
+            </div>
+            <div class="panel">
+              <h2 style="font-size:14px; font-weight:900; margin-bottom:10px;">📢 공지사항</h2>
+              <textarea id="notice-textarea" placeholder="메인 앱 상단에 노출할 공지 내용을 입력하세요.">${esc(notice)}</textarea>
+              <button class="btn btn-primary" onclick="saveNotice()">저장</button>
+              <div class="hint">현재는 admin.html 로컬 저장만 됩니다 (메인 앱 노출은 별도 연동 필요).</div>
+            </div>
+          </div>
+        `;
+      }
+
+      // ==========================================
+      // 3. 액션 함수
+      // ==========================================
+      window.togglePublic = function(routeId) {
+        if (!appState) return;
+        const r = appState.routes.find(x => x.id === routeId);
+        if (!r) return;
+        r.isPublic = !r.isPublic;
+        persistAppState();
+        // TODO: fetch(`/api/admin/routes/${routeId}`, {method:'PATCH', headers:{'X-ADMIN-TOKEN': ADMIN_TOKEN}, body: JSON.stringify({is_public: r.isPublic})})
+        renderTab(currentTab);
+      };
+
+      window.deleteRoute = function(routeId) {
+        if (!appState) return;
+        if (!confirm('이 루트를 삭제할까요? 되돌릴 수 없습니다.')) return;
+        appState.routes = appState.routes.filter(x => x.id !== routeId);
+        persistAppState();
+        // TODO: fetch(`/api/admin/routes/${routeId}`, {method:'DELETE', headers:{'X-ADMIN-TOKEN': ADMIN_TOKEN}})
+        renderTab(currentTab);
+      };
+
+      window.editRouteDemo = function() {
+        alert('메인 앱에서 관리자 권한으로 진입 필요');
+      };
+
+      window.exportRoutesJSON = function() {
+        const data = JSON.stringify(getRoutes(), null, 2);
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `keongyu-routes-${Date.now()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+
+      window.resolveReport = function(reportId) {
+        reports = reports.filter(r => r.id !== reportId);
+        // TODO: D1 reports.status='resolved' + admin_logs insert
+        // fetch(`/api/admin/reports/${reportId}`, {method:'PATCH', headers:{'X-ADMIN-TOKEN': ADMIN_TOKEN}, body: JSON.stringify({status:'resolved'})})
+        renderTab('reports');
+      };
+
+      window.grantPoints = function(userId) {
+        const amountStr = prompt('지급할 별사탕 수량을 입력하세요:', '50');
+        const amount = parseInt(amountStr, 10);
+        if (!amount || amount <= 0) return;
+        if (appState && appState.user && (appState.user.id === userId || appState.user.name === userId)) {
+          appState.user.points = (appState.user.points || 0) + amount;
+          persistAppState();
+          alert(`⭐ ${amount}개를 지급했습니다.`);
+        } else {
+          alert(`⭐ ${amount}개를 지급했습니다. (데모 유저는 실제로 반영되지 않습니다)`);
+        }
+        // TODO: fetch(`/api/admin/users/${userId}/points`, {method:'POST', headers:{'X-ADMIN-TOKEN': ADMIN_TOKEN}, body: JSON.stringify({amount})})
+        renderTab('users');
+      };
+
+      window.suspendUser = function() {
+        if (!confirm('이 사용자를 정지할까요?')) return;
+        alert('정지 처리는 데모입니다. 실제로는 D1 users.status 업데이트가 필요합니다.');
+        // TODO: fetch(`/api/admin/users/${userId}/suspend`, {method:'POST', headers:{'X-ADMIN-TOKEN': ADMIN_TOKEN}})
+      };
+
+      window.openPortOne = function() {
+        window.open('https://portone.io/', '_blank', 'noopener,noreferrer');
+      };
+
+      window.viewChats = function(routeId) {
+        const r = getRoutes().find(x => x.id === routeId);
+        if (!r) return;
+        const json = JSON.stringify(r.comments || [], null, 2);
+        alert(json.length > 1000 ? json.slice(0, 1000) + '\n... (1000자 초과, 생략됨)' : json);
+      };
+
+      window.saveAdminPassword = function() {
+        const input = document.getElementById('admin-pw-input');
+        const val = (input && input.value || '').trim();
+        if (!val) { alert('비밀번호를 입력해주세요.'); return; }
+        try { localStorage.setItem('admin_token', val); } catch (e) {}
+        alert('저장했습니다. (데모 - 실제 인증은 서버측 ADMIN_TOKEN 검증으로 교체 필요)');
+        if (input) input.value = '';
+      };
+
+      window.saveNotice = function() {
+        const ta = document.getElementById('notice-textarea');
+        try { localStorage.setItem('keongyu_admin_notice', (ta && ta.value) || ''); } catch (e) {}
+        alert('공지사항을 저장했습니다.');
+      };
+
+      // ==========================================
+      // 4. 인증 게이트 + 초기화
+      // ==========================================
+      function checkAdminAuth() {
+        let saved = null;
+        try { saved = localStorage.getItem('admin_token'); } catch (e) {}
+        if (saved === ADMIN_TOKEN) return true;
+        const input = prompt('관리자 토큰을 입력하세요:');
+        if (input === ADMIN_TOKEN) {
+          try { localStorage.setItem('admin_token', input); } catch (e) {}
+          return true;
+        }
+        alert('토큰이 올바르지 않습니다.');
+        return false;
+      }
+
+      function initAdmin() {
+        document.querySelectorAll('#sidebar-nav .nav-item').forEach(btn => {
+          btn.addEventListener('click', () => renderTab(btn.dataset.tab));
+        });
+        renderTab('dashboard');
+      }
+
+      window.addEventListener('DOMContentLoaded', () => {
+        if (!checkAdminAuth()) {
+          document.getElementById('admin-shell').innerHTML =
+            '<div style="padding:60px; text-align:center; width:100%;"><div style="font-size:32px;">🔒</div><div style="font-size:15px; font-weight:800; margin-top:10px;">접근이 거부되었습니다.</div></div>';
+          return;
+        }
+        initAdmin();
+      });
+    </script>
+  </body>
+</html>
