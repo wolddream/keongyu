@@ -2017,7 +2017,7 @@
           html += `
             <div class="search-box">
               <span class="icon">🔍</span>
-              <input type="text" id="search-input" placeholder="스팟, 카페, 목적, 태그 검색..." value="${esc(state.filter.query)}" oninput="onSearchInput(event)" oncompositionstart="onSearchCompositionStart(event)" oncompositionend="onSearchCompositionEnd(event)" />
+              <input type="text" id="search-input" placeholder="스팟, 카페, 목적, 태그 검색..." value="${esc(state.filter.query)}" oninput="onSearchInput(event)" />
             </div>
           `;
 
@@ -3100,6 +3100,18 @@
           }
         }
       }
+
+      // 검색창 IME(한글 등) 조합 이벤트: oncompositionstart/oncompositionend는 oninput/onclick과
+      // 달리 표준 GlobalEventHandlers 인라인 어트리뷰트가 아니라서(브라우저가 인식 안 함),
+      // <input oncompositionstart="..."> 방식은 실제로는 리스너가 전혀 등록되지 않는 죽은
+      // 코드였습니다. document에 위임해서 실제로 동작하게 합니다 - render()가 #root를 통째로
+      // 교체해 매번 새 <input> 노드가 생겨도 document 리스너는 그대로 유효합니다.
+      document.addEventListener('compositionstart', e => {
+        if (e.target && e.target.id === 'search-input') onSearchCompositionStart(e);
+      });
+      document.addEventListener('compositionend', e => {
+        if (e.target && e.target.id === 'search-input') onSearchCompositionEnd(e);
+      });
 
       // Esc closes whatever sheet/overlay is currently on top.
       document.addEventListener('keydown', e => {
