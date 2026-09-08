@@ -1,0 +1,2665 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>경유(KEONGYU) - 카페·산책 루트 공유 앱</title>
+    <meta name="description" content="목적별로 3초컷 고르는 카페·산책 루트 공유 앱" />
+    <meta property="og:title" content="경유(KEONGYU)" />
+    <meta property="og:description" content="목적별로 3초컷 고르는 카페·산책 루트 공유 앱" />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#8B6CFF" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="경유" />
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='42' fill='rgb(139,108,255)'/%3E%3Ccircle cx='96' cy='84' r='34' fill='white'/%3E%3Cpath d='M96 84L96 150' stroke='white' stroke-width='16' stroke-linecap='round'/%3E%3Ccircle cx='96' cy='84' r='14' fill='rgb(139,108,255)'/%3E%3C/svg%3E" />
+    <link rel="manifest" href="data:application/manifest+json,{&quot;name&quot;:&quot;경유 KEONGYU&quot;,&quot;short_name&quot;:&quot;경유&quot;,&quot;start_url&quot;:&quot;./&quot;,&quot;display&quot;:&quot;standalone&quot;,&quot;background_color&quot;:&quot;%23F5F5F0&quot;,&quot;theme_color&quot;:&quot;%238B6CFF&quot;,&quot;icons&quot;:[{&quot;src&quot;:&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='42' fill='rgb(139,108,255)'/%3E%3Ccircle cx='96' cy='84' r='34' fill='white'/%3E%3Cpath d='M96 84L96 150' stroke='white' stroke-width='16' stroke-linecap='round'/%3E%3Ccircle cx='96' cy='84' r='14' fill='rgb(139,108,255)'/%3E%3C/svg%3E&quot;,&quot;sizes&quot;:&quot;192x192&quot;,&quot;type&quot;:&quot;image/svg+xml&quot;}]}" />
+    <style>
+      :root {
+        --primary: #8B6CFF;
+        --mint: #2DD4A0;
+        --lavender: #8B6CFF;
+        --peach: #FF8C4B;
+        --pink: #FF6B8A;
+        --yellow: #FFC61C;
+        --blue: #5BA9FF;
+        --bg: #F5F5F0;
+        --card: #FFFFFF;
+        --text: #191F28;
+        --text-sub: #6B7684;
+        --border: #E5E8EB;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+      body {
+        background-color: #E8E8E2;
+        font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", Roboto, sans-serif;
+        color: var(--text);
+        display: flex;
+        justify-content: center;
+        min-height: 100vh;
+      }
+      #app-frame {
+        width: 100%;
+        max-width: 440px;
+        min-height: 100dvh;
+        background: var(--bg);
+        box-shadow: 0 0 30px rgba(0,0,0,0.08);
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        padding-bottom: 74px;
+      }
+      header {
+        position: sticky; top: 0; z-index: 40;
+        background: rgba(245, 245, 240, 0.95);
+        backdrop-filter: blur(8px);
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid rgba(0,0,0,0.05);
+      }
+      .logo-box { font-weight: 900; font-size: 19px; letter-spacing: -0.5px; color: var(--primary); display: flex; align-items: center; gap: 4px; cursor: pointer; }
+      .header-right { display: flex; align-items: center; gap: 8px; }
+      .point-chip {
+        background: #FFF; border: 1px solid var(--border); border-radius: 16px;
+        padding: 4px 10px; font-size: 13px; font-weight: 700; color: #E68A00;
+        display: flex; align-items: center; gap: 4px; cursor: pointer;
+      }
+      .icon-btn {
+        background: #FFF; border: 1px solid var(--border); width: 34px; height: 34px;
+        border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        position: relative; cursor: pointer; font-size: 16px;
+      }
+      .badge-dot {
+        position: absolute; top: -2px; right: -2px; background: #FF4242; color: white;
+        font-size: 10px; font-weight: 800; min-width: 16px; height: 16px;
+        border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 3px;
+      }
+      .upload-btn {
+        background: var(--primary); color: white; border: none; border-radius: 18px;
+        padding: 6px 12px; font-size: 13px; font-weight: 800; display: flex; align-items: center; gap: 3px; cursor: pointer;
+      }
+      nav.bottom-nav {
+        position: fixed; bottom: 0; width: 100%; max-width: 440px; height: 64px;
+        background: rgba(255,255,255,0.98); backdrop-filter: blur(10px);
+        border-top: 1px solid var(--border); display: flex; z-index: 50;
+      }
+      .nav-item {
+        flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 3px; cursor: pointer; font-size: 11px; font-weight: 700; color: var(--text-sub);
+      }
+      .nav-item.active { color: var(--primary); }
+      .nav-item .icon { font-size: 18px; }
+
+      /* Sub btn */
+      .sub-btn {
+        background: #111; color: white; border-radius: 20px; padding: 6px 14px;
+        font-size: 12px; font-weight: bold; border: none; cursor: pointer;
+      }
+      .sub-btn.subscribed { background: #EEE; color: #666; }
+
+      /* Cards & Lists */
+      .content-area { padding: 14px 16px; flex: 1; display: flex; flex-direction: column; gap: 14px; }
+      .banner {
+        background: linear-gradient(135deg, #FF6B8A, #FF8C4B);
+        border-radius: 16px; padding: 14px 16px; color: white; cursor: pointer;
+        display: flex; justify-content: space-between; align-items: center;
+        box-shadow: 0 4px 12px rgba(255,107,138,0.25);
+      }
+      .search-box {
+        position: relative; width: 100%;
+      }
+      .search-box input {
+        width: 100%; background: #FFF; border: 1.5px solid var(--border); border-radius: 14px;
+        padding: 12px 14px 12px 38px; font-size: 14px; font-weight: 500; outline: none; transition: border-color 0.2s;
+      }
+      .search-box input:focus { border-color: var(--primary); }
+      .search-box .icon { position: absolute; left: 12px; top: 12px; font-size: 16px; color: #999; }
+
+      .filter-scroll {
+        display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none;
+      }
+      .filter-scroll::-webkit-scrollbar { display: none; }
+      .filter-chip {
+        white-space: nowrap; padding: 7px 14px; border-radius: 20px; font-size: 13px; font-weight: 700;
+        background: #FFF; border: 1px solid var(--border); cursor: pointer; color: var(--text-sub);
+      }
+      .filter-chip.active { background: var(--text); color: #FFF; border-color: var(--text); }
+      .filter-chip.sub-chip.active { background: var(--primary); color: #FFF; border-color: var(--primary); }
+
+      .route-card {
+        background: var(--card); border-radius: 18px; padding: 16px; border: 1px solid var(--border);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03); display: flex; flex-direction: column; gap: 10px;
+      }
+      .card-top { display: flex; justify-content: space-between; align-items: center; }
+      .purpose-pill {
+        background: #F0F4FF; color: var(--primary); font-size: 11px; font-weight: 800;
+        padding: 4px 8px; border-radius: 8px;
+      }
+      .like-btn {
+        background: none; border: none; font-size: 13px; font-weight: 700; color: #FF4B6E;
+        display: flex; align-items: center; gap: 4px; cursor: pointer;
+      }
+      .card-title { font-size: 16px; font-weight: 800; line-height: 1.35; }
+      .card-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+      .info-pill {
+        background: #F5F5F0; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; color: var(--text-sub);
+      }
+      .card-img {
+        width: 100%; height: 140px; border-radius: 12px; object-fit: cover; background: #EFEFEF;
+      }
+      .card-bottom {
+        display: flex; justify-content: space-between; align-items: center; padding-top: 6px; border-top: 1px solid #F0F0EE;
+      }
+      .creator-info { display: flex; align-items: center; gap: 6px; }
+      .avatar-wrapper {
+        position: relative; width: 32px; height: 32px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center; font-size: 18px; background: #FFF;
+      }
+      .sticker-badge {
+        position: absolute; bottom: -3px; right: -3px; font-size: 11px;
+      }
+      .ribbon-tag { font-size: 10px; margin-left: 2px; }
+      .card-actions { display: flex; align-items: center; gap: 6px; }
+      .cta-btn {
+        background: var(--primary); color: white; border: none; border-radius: 20px;
+        padding: 7px 14px; font-size: 12px; font-weight: 800; cursor: pointer;
+      }
+
+      /* Sheets & Overlays */
+      .sheet-backdrop {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5);
+        z-index: 100; display: flex; justify-content: center; align-items: flex-end;
+      }
+      .bottom-sheet {
+        width: 100%; max-width: 440px; background: #FFF; border-radius: 24px 24px 0 0;
+        padding: 20px; max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 16px;
+        animation: slideUp 0.25s ease-out;
+      }
+      @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+      .fullscreen-overlay {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg);
+        z-index: 90; display: flex; justify-content: center;
+      }
+      .overlay-inner {
+        width: 100%; max-width: 440px; height: 100dvh; display: flex; flex-direction: column; background: var(--bg);
+      }
+      .toast-box {
+        position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%);
+        background: rgba(25, 31, 40, 0.92); color: white; padding: 10px 18px;
+        border-radius: 24px; font-size: 13px; font-weight: 700; z-index: 200;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2); pointer-events: none;
+        transition: opacity 0.25s, transform 0.25s; opacity: 0;
+      }
+      .toast-box.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+      .theme-flash {
+        position: fixed; top:0; left:0; right:0; bottom:0; background: var(--primary);
+        opacity: 0.15; z-index: 999; pointer-events: none; animation: flashOut 0.4s ease-out forwards;
+      }
+      @keyframes flashOut { from { opacity: 0.25; } to { opacity: 0; } }
+      @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-8px); } }
+
+      /* Radio item */
+      .radio-item {
+        display: flex; align-items: center; justify-content: space-between; padding: 12px;
+        border: 1px solid var(--border); border-radius: 14px; cursor: pointer; margin-bottom: 8px;
+      }
+      .radio-item.selected { border-color: var(--primary); background: rgba(139, 108, 255, 0.05); }
+
+      /* Grid 2x2 */
+      .grid-2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .grid-card {
+        background: #F8F8F6; border: 1px solid var(--border); border-radius: 16px;
+        padding: 16px; display: flex; flex-direction: column; align-items: center; text-align: center;
+        gap: 6px; cursor: pointer; position: relative;
+      }
+      .grid-card:hover { border-color: var(--primary); background: #FFF; }
+      .rec-badge {
+        position: absolute; top: -6px; right: -6px; background: #FF4242; color: white;
+        font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 8px;
+      }
+
+      /* Collaborative planning (함께가기) */
+      .btn-secondary {
+        background: #111; color: white; border: none; border-radius: 20px;
+        padding: 8px 14px; font-size: 12px; font-weight: bold; cursor: pointer;
+      }
+      .collab-pill {
+        background: var(--mint); color: white; font-size: 11px; padding: 4px 8px;
+        border-radius: 12px; font-weight: bold; white-space: nowrap;
+      }
+      .participants-stack { display: flex; margin-left: 8px; }
+      .participants-stack .avatar-wrapper { margin-left: -8px; border: 2px solid #FFF; }
+      .edit-log-item {
+        display: flex; align-items: center; gap: 8px; padding: 6px 0;
+        font-size: 12px; border-bottom: 1px solid #F0F0F0;
+      }
+      .step-mini-actions { display: flex; gap: 6px; margin-top: 4px; }
+      .step-mini-btn {
+        background: #F5F5F0; color: var(--text-sub); border: none; border-radius: 10px;
+        padding: 4px 8px; font-size: 11px; font-weight: 700; cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app-frame">
+      <!-- Dynamic render root -->
+      <div id="root" style="display:contents;"></div>
+    </div>
+
+    <!-- Hidden global inputs required by spec -->
+    <input type="file" id="global-file-input" style="display:none;" multiple accept="image/*" />
+    <input type="file" id="fallback-camera-input" style="display:none;" capture="environment" accept="image/*" />
+
+    <!-- Bottom Toast -->
+    <div id="toast" class="toast-box"></div>
+
+    <script>
+      // ==========================================
+      // 0. Constants & Utilities
+      // ==========================================
+      const STORAGE_KEY = 'keongyu_v1';
+      const AVATAR_MAP = { bear: '🐻', cat: '🐱', puppy: '🐶', rabbit: '🐰', fox: '🦊', panda: '🐼', tiger: '🐯', koala: '🐨', hamster: '🐹', lion: '🦁' };
+      const STICKER_MAP = { heart: '❤️', star: '⭐', fire: '🔥', clover: '🍀', sparkle: '✨', crown: '👑' };
+      const THEME_MAP = { default: '#8B6CFF', mint: '#2DD4A0', peach: '#FF8C4B', pink: '#FF6B8A', yellow: '#FFC61C', blue: '#5BA9FF' };
+      const AVATAR_LIST = ['🐻','🐱','🐶','🐰','🦊','🐼','🐯','🐨','🐹','🦁'];
+
+      const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+      function esc(str) {
+        if (str === null || str === undefined) return '';
+        return String(str).replace(/[&<>"']/g, c => ESC_MAP[c]);
+      }
+
+      function hashNameToAvatar(name) {
+        if (!name) return '🐻';
+        let h = 0;
+        for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+        return AVATAR_LIST[Math.abs(h) % AVATAR_LIST.length];
+      }
+
+      function showToast(msg) {
+        const toast = document.getElementById('toast');
+        if (!toast) return;
+        toast.textContent = msg;
+        toast.classList.add('show');
+        clearTimeout(window._toastTimer);
+        window._toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 2000);
+      }
+
+      function copyText(text, successMsg, pts = 0) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).catch(() => {});
+        }
+        if (pts > 0) {
+          state.user.points += pts;
+          saveState();
+        }
+        showToast(successMsg || '복사되었습니다!');
+        render();
+      }
+
+      window.sendInvite = function(channel) {
+        const link = `https://keongyu.app/invite?code=USER_${state.user.invites}`;
+        if (channel === '링크' && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(link).catch(() => {});
+        }
+        state.user.invites += 1;
+        state.user.points += 25;
+        saveState();
+        showToast(`${channel}로 초대장을 보냈어요! ⭐+25 적립`);
+        render();
+      };
+
+      // ==========================================
+      // 1. Initial State Model
+      // ==========================================
+      const DEFAULT_ROUTES = [
+        {
+          id: 'r1',
+          title: '성수 감성 붉은벽돌 카페 & 디저트 투어',
+          purpose: '감성카페',
+          tags: ['#성수', '#디저트', '#포토존'],
+          distance: '1.4km',
+          time: '45분',
+          budget: '1.8만원',
+          likes: 420,
+          creator: '성수러버민지',
+          isPublic: true,
+          isMine: false,
+          image: null,
+          steps: [
+            { type: 'START', name: '성수역 3번 출구 카페거리', address: '서울 성동구 아차산로 113', cost: '0원', memo: '붉은벽돌 골목으로 진입하는 입구입니다.' },
+            { type: '경유', name: '로우키 커피 성수점', address: '서울 성동구 연무장3길 6', cost: '6,000원', memo: '드립 커피 향이 아주 짙고 차분한 분위기!' },
+            { type: '도착', name: '서울숲 야외 피크닉 벤치', address: '서울 성동구 뚝섬로 273', cost: '12,000원', memo: '테이크아웃한 에그타르트 먹으며 힐링 마무리' }
+          ],
+          comments: [{ user: '힙스터준', text: '여긴 진짜 주말마다 가도 안 질려요!' }]
+        },
+        {
+          id: 'r2',
+          title: '연남동 경의선 숲길 반려견 산책 코스',
+          purpose: '힐링·산책',
+          tags: ['#연남동', '#댕댕이', '#숲길'],
+          distance: '2.1km',
+          time: '1시간',
+          budget: '9,000원',
+          likes: 210,
+          creator: '댕댕산책러',
+          isPublic: true,
+          isMine: false,
+          image: null,
+          steps: [
+            { type: 'START', name: '홍대입구역 3번 숲길 입구', address: '서울 마포구 양화로 160', cost: '0원', memo: '나무 그늘이 시원하게 시작되는 곳' },
+            { type: '경유', name: '연남 반려견 프렌들리 라운지', address: '서울 마포구 동교로 242', cost: '5,500원', memo: '멍푸치노 판매! 쉬어가기 좋아요.' },
+            { type: '도착', name: '가좌역 방향 잔디밭 쉼터', address: '서울 서대문구 수색로 28', cost: '3,500원', memo: '넓은 잔디밭에서 강아지와 휴식' }
+          ],
+          comments: []
+        },
+        {
+          id: 'r3',
+          title: '을지로 레트로 노포 골목 & 만선호프',
+          purpose: '데이트',
+          tags: ['#을지로', '#힙지로', '#노포'],
+          distance: '1.0km',
+          time: '50분',
+          budget: '3.2만원',
+          likes: 850,
+          creator: '힙스터준',
+          isPublic: true,
+          isMine: false,
+          image: null,
+          steps: [
+            { type: 'START', name: '을지로3가역 11번 골목', address: '서울 중구 을지로 101', cost: '0원', memo: '간판 없는 조명가게들을 지나쳐요' },
+            { type: '경유', name: '을지다락 빈티지 바', address: '서울 중구 수표로 10길 19', cost: '14,000원', memo: '시그니처 오므라이스와 하이볼!' },
+            { type: '도착', name: '만선호프 야외 테이블', address: '서울 중구 을지로13길 19', cost: '18,000원', memo: '노가리와 생맥주로 시원하게 마침표' }
+          ],
+          comments: []
+        },
+        {
+          id: 'r4',
+          title: '망원 한강공원 노을 피크닉 런',
+          purpose: '힐링·산책',
+          tags: ['#망원', '#한강공원', '#노을'],
+          distance: '2.8km',
+          time: '1시간 10분',
+          budget: '8,000원',
+          likes: 180,
+          creator: '망원토박이',
+          isPublic: true,
+          isMine: false,
+          image: null,
+          steps: [
+            { type: 'START', name: '망원시장 훈훈호떡 앞', address: '서울 마포구 포은로8길 14', cost: '2,000원', memo: '간식거리 호떡 하나 사들고 출발' },
+            { type: '경유', name: '망원나들목 굴다리', address: '서울 마포구 망원동 453', cost: '0원', memo: '한강 바람이 불어오는 지점' },
+            { type: '도착', name: '망원 한강 잔디밭 1주차장 앞', address: '서울 마포구 마포나루길 467', cost: '6,000원', memo: '붉게 물드는 노을을 감상하기' }
+          ],
+          comments: []
+        },
+        {
+          id: 'r5',
+          title: '북촌 한옥마을 조용한 독서 & 작업 투어',
+          purpose: '작업·몰입',
+          tags: ['#북촌', '#노트북', '#조용한'],
+          distance: '1.2km',
+          time: '1시간 30분',
+          budget: '1.5만원',
+          likes: 410,
+          creator: '프리랜서유나',
+          isPublic: true,
+          isMine: false,
+          image: null,
+          steps: [
+            { type: 'START', name: '안국역 2번 출구 재동초 앞', address: '서울 종로구 북촌로 18', cost: '0원', memo: '고즈넉한 돌담길 산책 시작' },
+            { type: '경유', name: '북촌 한옥 서재 북카페', address: '서울 종로구 계동길 37', cost: '7,500원', memo: '콘센트 많고 조용한 집중 공간' },
+            { type: '도착', name: '정독도서관 야외 정원', address: '서울 종로구 북촌로5길 48', cost: '0원', memo: '마무리 생각 정리 산책' }
+          ],
+          comments: []
+        },
+        {
+          id: 'r6',
+          title: '남산 소월로 야경 시티뷰 드라이브',
+          purpose: '야경·드라이브',
+          tags: ['#남산', '#야경', '#드라이브'],
+          distance: '4.5km',
+          time: '35분',
+          budget: '5,000원',
+          likes: 890,
+          creator: '나이트크루즈',
+          isPublic: true,
+          isMine: false,
+          image: null,
+          steps: [
+            { type: 'START', name: '하얏트 호텔 앞 소월로 교차로', address: '서울 용산구 소월로 322', cost: '0원', memo: '반짝이는 서울 도심 불빛 시작' },
+            { type: '경유', name: '남산 포토아일랜드 전망대', address: '서울 중구 회현동1가 산1-2', cost: '0원', memo: '잠시 정차해 서울타워와 야경 촬영' },
+            { type: '도착', name: '남산 백범광장 야외 쉼터', address: '서울 중구 남산공원길 231', cost: '5,000원', memo: '따뜻한 캔커피 한잔하며 완주' }
+          ],
+          comments: []
+        },
+        {
+          id: 'r7',
+          title: '샤로수길 학생 추천 가성비 브런치',
+          purpose: '가성비',
+          tags: ['#샤로수길', '#가성비', '#대학가'],
+          distance: '0.9km',
+          time: '40분',
+          budget: '9,500원',
+          likes: 90,
+          creator: '학생회장철수',
+          isPublic: true,
+          isMine: false,
+          image: null,
+          steps: [
+            { type: 'START', name: '서울대입구역 2번 출구', address: '서울 관악구 관악로 161', cost: '0원', memo: '골목 초입' },
+            { type: '경유', name: '샤로수 토스트 & 샌드위치', address: '서울 관악구 관악로14길 28', cost: '5,500원', memo: '푸짐한 에그 샌드위치!' },
+            { type: '도착', name: '낙성대공원 강감찬 숲길', address: '서울 관악구 낙성대로 77', cost: '0원', memo: '산책하며 든든하게 소화' }
+          ],
+          comments: []
+        },
+        {
+          id: 'r8',
+          title: '송리단길 석촌호수 벚꽃 뷰 데이트',
+          purpose: '데이트',
+          tags: ['#송리단길', '#석촌호수', '#데이트'],
+          distance: '1.6km',
+          time: '55분',
+          budget: '2.5만원',
+          likes: 530,
+          creator: '데이트마스터',
+          isPublic: true,
+          isMine: false,
+          image: null,
+          steps: [
+            { type: 'START', name: '송파나루역 1번 출구', address: '서울 송파구 백제고분로 445', cost: '0원', memo: '송리단길 골목으로 진입' },
+            { type: '경유', name: '호수 뷰 루프탑 라운지', address: '서울 송파구 송파나루길 206', cost: '16,000원', memo: '석촌호수 동호가 한눈에 보이는 명당' },
+            { type: '도착', name: '석촌호수 수변 산책로', address: '서울 송파구 잠실동 47', cost: '0원', memo: '손잡고 호수 둘레길 걷기' }
+          ],
+          comments: []
+        },
+        {
+          id: 'r9',
+          title: '내가 발견한 서울숲 숨은 골목 산책',
+          purpose: '힐링·산책',
+          tags: ['#서울숲', '#나만의루트', '#골목'],
+          distance: '1.1km',
+          time: '35분',
+          budget: '7,000원',
+          likes: 165,
+          creator: '나',
+          isPublic: true,
+          isMine: true,
+          image: null,
+          steps: [
+            { type: 'START', name: '뚝섬역 8번 출구 골목', address: '서울 성동구 상원길 19', cost: '0원', memo: '조용한 주택가 골목길' },
+            { type: '경유', name: '골목길 테이크아웃 로스터리', address: '서울 성동구 서울숲2길 12', cost: '4,500원', memo: '아침 라떼 한 잔 들고 걷기' },
+            { type: '도착', name: '서울숲 은행나무 숲길', address: '서울 성동구 뚝섬로 273', cost: '0원', memo: '바람 소리 들으며 명상' }
+          ],
+          comments: []
+        }
+      ];
+      DEFAULT_ROUTES.forEach(r => {
+        r.isCollaborative = false;
+        r.participants = [];
+        r.pendingInvites = [];
+        r.editLog = [];
+      });
+
+      function withCollabDefaults(route) {
+        route.isCollaborative = false;
+        route.participants = [];
+        route.pendingInvites = [];
+        route.editLog = [];
+        return route;
+      }
+
+      function loadSavedState() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) return JSON.parse(raw);
+        } catch (e) {}
+        return {
+          user: {
+            name: '나',
+            points: 120,
+            invites: 3,
+            stickersEarned: 2,
+            completedRoutes: [],
+            followCheckins: {}
+          },
+          custom: {
+            owned: {
+              avatar: ['bear', 'cat'],
+              sticker: ['heart', 'star'],
+              theme: ['default', 'mint']
+            },
+            equipped: {
+              avatar: 'bear',
+              sticker: 'heart',
+              theme: 'default'
+            }
+          },
+          challenge: { progress: 1, todayCheck: null, completed: false },
+          subscriptions: {
+            '성수러버민지': { subscribed: true, notif: 'all', subscribedAt: Date.now() - 172800000 },
+            '힙스터준': { subscribed: true, notif: 'personal', subscribedAt: Date.now() - 432000000 }
+          },
+          notifications: [
+            { id: 101, creator: '성수러버민지', title: '성수러버민지님이 새 루트를 올렸어요: 붉은벽돌 카페 투어', routeId: 'r1', time: '10분 전', read: false, type: 'new_route' },
+            { id: 102, creator: '힙스터준', title: '힙스터준님이 새 루트를 올렸어요: 을지로 노포 골목 투어', routeId: 'r3', time: '1시간 전', read: true, type: 'new_route' }
+          ],
+          routes: DEFAULT_ROUTES,
+          filter: { purpose: '전체', query: '' },
+          ui: {
+            tab: 'explore',
+            bottomSheet: null, // 'upload', 'notifSetting', 'notifInbox', 'share', 'customShop', 'charge'
+            followRouteId: null,
+            followStep: 0,
+            notifSheetCreator: null,
+            showNotifInbox: false,
+            review: { stars: 5, text: '', images: [] },
+            shareRouteId: null,
+            cameraActive: false,
+            cameraFacing: 'environment',
+            collabSheet: null, // { routeId }
+            collabEditSheet: null, // { routeId, stepIndex, mode: 'edit'|'add', afterIdx }
+            charge: { pack: null, method: null }
+          },
+          tempImages: []
+        };
+      }
+
+      const state = loadSavedState();
+      normalizeState();
+
+      function normalizeState() {
+        // Backfill fields introduced after this state may have been saved to localStorage.
+        if (!state.ui.collabSheet) state.ui.collabSheet = null;
+        if (state.ui.collabEditSheet === undefined) state.ui.collabEditSheet = null;
+        if (state.ui.charge === undefined) state.ui.charge = { pack: null, method: null };
+        if (state.challenge.todayCheck === undefined) state.challenge.todayCheck = null;
+        if (state.challenge.completed === undefined) state.challenge.completed = false;
+        state.routes.forEach(r => {
+          if (r.isCollaborative === undefined) r.isCollaborative = false;
+          if (!r.participants) r.participants = [];
+          if (!r.pendingInvites) r.pendingInvites = [];
+          if (!r.editLog) r.editLog = [];
+        });
+        // Migrate followCheckins from "routeId_step" (shared) to "routeId_step_user" (per-participant).
+        const oldCheckins = state.user.followCheckins || {};
+        const migrated = {};
+        Object.keys(oldCheckins).forEach(key => {
+          if (oldCheckins[key] !== true) return;
+          const migratedKey = key.endsWith('_' + state.user.name) ? key : key + '_' + state.user.name;
+          migrated[migratedKey] = true;
+        });
+        state.user.followCheckins = migrated;
+      }
+
+      function isQuotaError(e) {
+        return !!e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014 || e.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+      }
+
+      // Frees up room by dropping the heaviest base64 image data first (in-flight uploads,
+      // then the oldest of my own route thumbnails), keeping the state itself intact.
+      function pruneLargeImages() {
+        let pruned = false;
+        if (state.tempImages && state.tempImages.length) {
+          state.tempImages = [];
+          pruned = true;
+        }
+        if (state.ui.review && state.ui.review.images && state.ui.review.images.length) {
+          state.ui.review.images = [];
+          pruned = true;
+        }
+        const myImageRoutes = state.routes.filter(r => r.isMine && r.image && r.image.startsWith('data:'));
+        if (myImageRoutes.length > 1) {
+          myImageRoutes.slice(1).forEach(r => { r.image = null; });
+          pruned = true;
+        }
+        return pruned;
+      }
+
+      function saveState() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch (e) {
+          if (!isQuotaError(e)) return;
+          if (pruneLargeImages()) {
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+              showToast('저장 공간이 부족해서 큰 이미지를 압축했어요 📦');
+              return;
+            } catch (e2) {
+              // fall through to the toast below
+            }
+          }
+          showToast('저장 공간이 가득 찼어요. 사진을 좀 정리해주세요.');
+        }
+      }
+
+      // Calculate creator grade dynamically
+      function getCreatorTier(creatorName) {
+        let totalLikes = 0;
+        for (const r of state.routes) {
+          if (r.creator === creatorName) totalLikes += (r.likes || 0);
+        }
+        if (totalLikes >= 800) return { name: '다이아', icon: '💎', color: '#5BA9FF', border: '2px solid #5BA9FF', glow: '0 0 10px rgba(91,169,255,0.6)', ribbon: true, likes: totalLikes, next: null };
+        if (totalLikes >= 400) return { name: '골드', icon: '🥇', color: '#FFC61C', border: '2px solid #FFC61C', glow: 'none', ribbon: true, likes: totalLikes, next: 800 };
+        if (totalLikes >= 150) return { name: '실버', icon: '🥈', color: '#94A3B8', border: '2px solid #94A3B8', glow: 'none', ribbon: false, likes: totalLikes, next: 400 };
+        return { name: '브론즈', icon: '🥉', color: '#CD7F32', border: '2px solid #CD7F32', glow: 'none', ribbon: false, likes: totalLikes, next: 150 };
+      }
+
+      function getAvatarDisplay(creatorName) {
+        if (creatorName === state.user.name) {
+          return AVATAR_MAP[state.custom.equipped.avatar] || '🐻';
+        }
+        return hashNameToAvatar(creatorName);
+      }
+
+      function getStickerDisplay(creatorName) {
+        if (creatorName === state.user.name) {
+          return STICKER_MAP[state.custom.equipped.sticker] || '❤️';
+        }
+        return '⭐';
+      }
+
+      // Routes without a real uploaded photo (dummy data, or map/GPX/GPS-only imports)
+      // fall back to a purpose-themed gradient card instead of hotlinking stock photos.
+      const PURPOSE_VISUAL = {
+        '감성카페': { emoji: '☕', gradient: 'linear-gradient(135deg, #FFE8D6, #FFC9A0)' },
+        '힐링·산책': { emoji: '🌿', gradient: 'linear-gradient(135deg, #D9F5EA, #A8E6CB)' },
+        '데이트': { emoji: '💐', gradient: 'linear-gradient(135deg, #FFE1EA, #FFB8C9)' },
+        '작업·몰입': { emoji: '📖', gradient: 'linear-gradient(135deg, #E9E4FF, #C9BBFF)' },
+        '야경·드라이브': { emoji: '🌃', gradient: 'linear-gradient(135deg, #DCE9FF, #A9C4FF)' },
+        '가성비': { emoji: '🧾', gradient: 'linear-gradient(135deg, #FFF6D9, #FFE79C)' }
+      };
+
+      function renderRouteThumb(route, heightPx) {
+        if (route.image) {
+          return `<img class="card-img" style="height:${heightPx}px;" src="${esc(route.image)}" alt="${esc(route.title)}" />`;
+        }
+        const v = PURPOSE_VISUAL[route.purpose] || { emoji: '📍', gradient: 'linear-gradient(135deg, #F0F0EE, #E0E0DC)' };
+        return `<div class="card-img" style="height:${heightPx}px; background:${v.gradient}; display:flex; align-items:center; justify-content:center; font-size:${Math.round(heightPx * 0.4)}px;">${v.emoji}</div>`;
+      }
+
+      // ==========================================
+      // 2. Global Actions & Event Handlers
+      // ==========================================
+      window.setTab = function(tab) {
+        state.ui.tab = tab;
+        saveState();
+        render();
+      };
+
+      window.setPurposeFilter = function(purpose) {
+        state.filter.purpose = purpose;
+        saveState();
+        render();
+      };
+
+      window.resetFilters = function() {
+        state.filter.purpose = '전체';
+        state.filter.query = '';
+        saveState();
+        render();
+      };
+
+      window.onSearchInput = function(e) {
+        state.filter.query = e.target.value;
+        saveState();
+        // Rebuilding the DOM mid-composition (render() replaces the whole innerHTML,
+        // recreating this very <input>) breaks the IME session and corrupts Hangul/CJK input.
+        // Skip re-rendering until the composition is committed.
+        if (e.target.dataset.composing === 'true') return;
+        render();
+      };
+
+      window.onSearchCompositionStart = function(e) {
+        e.target.dataset.composing = 'true';
+      };
+
+      window.onSearchCompositionEnd = function(e) {
+        e.target.dataset.composing = 'false';
+        state.filter.query = e.target.value;
+        saveState();
+        render();
+      };
+
+      window.toggleLike = function(routeId) {
+        const route = state.routes.find(r => r.id === routeId);
+        if (!route) return;
+        route.likes = (route.likes || 0) + 1;
+        saveState();
+        render();
+      };
+
+      window.toggleSubscribe = function(creator) {
+        if (creator === state.user.name) {
+          showToast('자신은 구독할 수 없어요!');
+          return;
+        }
+        const current = state.subscriptions[creator];
+        if (current && current.subscribed) {
+          delete state.subscriptions[creator];
+          showToast(`${creator}님의 구독을 취소했어요.`);
+        } else {
+          state.subscriptions[creator] = {
+            subscribed: true,
+            notif: 'all',
+            subscribedAt: Date.now()
+          };
+          state.user.points += 3;
+          showToast(`${creator}님을 구독했어요! ⭐+3 🔔`);
+        }
+        saveState();
+        render();
+      };
+
+      window.openNotifSetting = function(creator) {
+        state.ui.notifSheetCreator = creator;
+        state.ui.bottomSheet = 'notifSetting';
+        render();
+      };
+
+      window.setNotifOption = function(notifType) {
+        const creator = state.ui.notifSheetCreator;
+        if (!creator) return;
+        if (!state.subscriptions[creator]) {
+          state.subscriptions[creator] = { subscribed: true, notif: notifType, subscribedAt: Date.now() };
+        } else {
+          state.subscriptions[creator].notif = notifType;
+        }
+        const textMap = { all: '전체', personal: '맞춤 설정', none: '무음' };
+        showToast(`${creator}님의 알림을 [${textMap[notifType]}]으로 설정했어요!`);
+        saveState();
+        render();
+      };
+
+      window.unsubscribeFromSheet = function() {
+        const creator = state.ui.notifSheetCreator;
+        if (creator && state.subscriptions[creator]) {
+          delete state.subscriptions[creator];
+          showToast(`${creator}님의 구독을 취소했습니다.`);
+        }
+        state.ui.bottomSheet = null;
+        state.ui.notifSheetCreator = null;
+        saveState();
+        render();
+      };
+
+      window.openNotifInbox = function() {
+        state.ui.bottomSheet = 'notifInbox';
+        render();
+      };
+
+      window.markAllNotifsRead = function() {
+        state.notifications.forEach(n => n.read = true);
+        saveState();
+        showToast('모든 알림을 읽음 처리했습니다.');
+        render();
+      };
+
+      window.clickNotifItem = function(notifId, routeId) {
+        const n = state.notifications.find(item => item.id === notifId);
+        if (n) n.read = true;
+        state.ui.bottomSheet = null;
+        state.ui.followRouteId = routeId;
+        state.ui.followStep = 0;
+        saveState();
+        render();
+      };
+
+      window.simulateNewRouteNotif = function() {
+        // Find a subscribed creator or default
+        const subscribedCreators = Object.keys(state.subscriptions).filter(c => state.subscriptions[c].subscribed);
+        const creator = subscribedCreators[0] || '성수러버민지';
+        const notifLevel = state.subscriptions[creator]?.notif || 'all';
+
+        if (notifLevel === 'none') {
+          showToast(`${creator}님 알림이 [무음]으로 설정되어 알림이 생성되지 않았습니다.`);
+          return;
+        }
+        if (notifLevel === 'personal' && Math.random() < 0.5) {
+          showToast(`${creator}님 맞춤 알림 규칙에 따라 이번 루트는 알림이 생략되었습니다.`);
+          return;
+        }
+
+        const newNotif = {
+          id: Date.now(),
+          creator,
+          title: `${creator}님이 새로운 감성 힐링 루트를 공개했어요!`,
+          routeId: 'r1',
+          time: '방금 전',
+          read: false,
+          type: 'new_route'
+        };
+        state.notifications.unshift(newNotif);
+        if (navigator.vibrate) try { navigator.vibrate(200); } catch(e){}
+        showToast(`🔔 ${creator}님이 새 루트를 올렸어요!`);
+        saveState();
+        render();
+      };
+
+      window.openShareSheet = function(routeId) {
+        state.ui.shareRouteId = routeId;
+        state.ui.bottomSheet = 'share';
+        render();
+      };
+
+      window.shareChannel = function(channel) {
+        const route = state.routes.find(r => r.id === state.ui.shareRouteId) || state.routes[0];
+        const shareUrl = window.location.href.split('?')[0] + '?route=' + (route ? route.id : '');
+        copyText(shareUrl, `[${channel}] 공유 링크가 복사되었습니다! ⭐+8 별사탕 적립`, 8);
+        state.ui.bottomSheet = null;
+        saveState();
+        render();
+      };
+
+      window.openUploadSheet = function() {
+        state.ui.bottomSheet = 'upload';
+        state.tempImages = [];
+        render();
+      };
+
+      window.closeSheet = function() {
+        if (window._mediaStream) {
+          window._mediaStream.getTracks().forEach(t => t.stop());
+          window._mediaStream = null;
+        }
+        state.ui.bottomSheet = null;
+        state.ui.cameraActive = false;
+        state.ui.collabSheet = null;
+        state.ui.collabEditSheet = null;
+        render();
+      };
+
+      // Upload method A: Photos
+      const IMAGE_MAX_DIM = 800;
+      const IMAGE_QUALITY = 0.7;
+
+      // Downscales a picked file to at most IMAGE_MAX_DIM per side and re-encodes as JPEG
+      // so localStorage doesn't fill up with full-resolution phone photos.
+      function resizeImageFile(file) {
+        return new Promise(resolve => {
+          const reader = new FileReader();
+          reader.onload = evt => {
+            const img = new Image();
+            img.onload = () => {
+              let { width, height } = img;
+              if (width > IMAGE_MAX_DIM || height > IMAGE_MAX_DIM) {
+                if (width > height) {
+                  height = Math.round(height * (IMAGE_MAX_DIM / width));
+                  width = IMAGE_MAX_DIM;
+                } else {
+                  width = Math.round(width * (IMAGE_MAX_DIM / height));
+                  height = IMAGE_MAX_DIM;
+                }
+              }
+              const canvas = document.createElement('canvas');
+              canvas.width = width;
+              canvas.height = height;
+              canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+              resolve(canvas.toDataURL('image/jpeg', IMAGE_QUALITY));
+            };
+            img.onerror = () => resolve(evt.target.result);
+            img.src = evt.target.result;
+          };
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      window.triggerAlbumUpload = function() {
+        const input = document.getElementById('global-file-input');
+        input.onchange = function(e) {
+          const files = Array.from(e.target.files || []);
+          if (!files.length) return;
+          showToast(`${files.length}장의 사진을 분석 중입니다... 🪄`);
+          Promise.all(files.map(resizeImageFile)).then(dataUrls => {
+            dataUrls.filter(Boolean).forEach(url => state.tempImages.push(url));
+            setTimeout(() => {
+              completePhotoUpload();
+            }, 1500);
+          });
+        };
+        input.click();
+      };
+
+      window.startLiveCamera = async function() {
+        const video = document.getElementById('camera-video');
+        if (!video || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          fallbackCamera();
+          return;
+        }
+        try {
+          if (window._mediaStream) {
+            window._mediaStream.getTracks().forEach(t => t.stop());
+          }
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: state.ui.cameraFacing || 'environment' }
+          });
+          window._mediaStream = stream;
+          video.srcObject = stream;
+          video.play();
+        } catch (err) {
+          fallbackCamera();
+        }
+      };
+
+      window.fallbackCamera = function() {
+        showToast('카메라 스트림 권한 대신 파일 캡처 모드로 전환합니다.');
+        const fallback = document.getElementById('fallback-camera-input');
+        fallback.onchange = function(e) {
+          const file = e.target.files && e.target.files[0];
+          if (!file) return;
+          resizeImageFile(file).then(url => {
+            if (url) state.tempImages.push(url);
+            completePhotoUpload();
+          });
+        };
+        fallback.click();
+      };
+
+      window.switchCameraFacing = function() {
+        state.ui.cameraFacing = state.ui.cameraFacing === 'environment' ? 'user' : 'environment';
+        startLiveCamera();
+      };
+
+      window.captureFrame = function() {
+        const video = document.getElementById('camera-video');
+        if (!video || !video.videoWidth) {
+          showToast('카메라가 아직 준비되지 않았어요. 잠시 후 다시 시도해주세요.');
+          return;
+        }
+        const srcWidth = video.videoWidth || 640;
+        const srcHeight = video.videoHeight || 480;
+        let width = srcWidth;
+        let height = srcHeight;
+        if (width > IMAGE_MAX_DIM || height > IMAGE_MAX_DIM) {
+          if (width > height) {
+            height = Math.round(height * (IMAGE_MAX_DIM / width));
+            width = IMAGE_MAX_DIM;
+          } else {
+            width = Math.round(width * (IMAGE_MAX_DIM / height));
+            height = IMAGE_MAX_DIM;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', IMAGE_QUALITY);
+        state.tempImages.push(dataUrl);
+        showToast(`인증샷 ${state.tempImages.length}장이 캡처되었습니다! 📸`);
+        render();
+      };
+
+      window.openLiveCamera = function() {
+        state.ui.bottomSheet = null;
+        state.ui.cameraActive = true;
+        state.tempImages = [];
+        render();
+        startLiveCamera();
+      };
+
+      window.finishLiveCapture = function() {
+        if (!state.tempImages.length) return;
+        if (window._mediaStream) {
+          window._mediaStream.getTracks().forEach(t => t.stop());
+          window._mediaStream = null;
+        }
+        state.ui.cameraActive = false;
+        completePhotoUpload();
+      };
+
+      function completePhotoUpload() {
+        state.ui.cameraActive = false;
+        const newRoute = {
+          id: 'r_' + Date.now(),
+          title: '내가 찍은 사진으로 완성한 산책길',
+          purpose: '감성카페',
+          tags: ['#사진기반', '#감성스팟', '#내루트'],
+          distance: '1.2km',
+          time: '35분',
+          budget: '1.2만원',
+          likes: 0,
+          creator: state.user.name,
+          isPublic: true,
+          isMine: true,
+          image: state.tempImages[0] || null,
+          steps: [
+            { type: 'START', name: '첫 번째 사진 발견 스팟', address: '서울 성동구 연무장길 10', cost: '0원', memo: '사진 EXIF 위치에서 자동 생성됨' },
+            { type: '경유', name: '경유 카페 스팟', address: '서울 성동구 서울숲길 15', cost: '6,000원', memo: '따뜻한 커피 한 잔' },
+            { type: '도착', name: '산책 마무리 벤치', address: '서울 성동구 뚝섬로 273', cost: '0원', memo: '완주 인증 완료' }
+          ],
+          comments: []
+        };
+        state.routes.unshift(withCollabDefaults(newRoute));
+        state.tempImages = [];
+        state.user.points += 15;
+        state.ui.bottomSheet = null;
+        state.ui.tab = 'myRoutes';
+        saveState();
+        showToast('새 루트가 등록되었습니다! ⭐+15 적립');
+        render();
+      }
+
+      // Upload method B: Map link
+      window.uploadMapLink = function() {
+        const link = prompt('네이버/카카오/구글 지도 링크를 입력하세요:');
+        if (!link) return;
+        showToast('지도 좌표를 파싱하여 3단계 루트를 생성 중입니다...');
+        setTimeout(() => {
+          const newRoute = {
+            id: 'r_' + Date.now(),
+            title: '지도 링크로 가져온 추천 코스',
+            purpose: '데이트',
+            tags: ['#지도추천', '#데이트', '#핵심경유'],
+            distance: '1.5km',
+            time: '40분',
+            budget: '2.0만원',
+            likes: 0,
+            creator: state.user.name,
+            isPublic: true,
+            isMine: true,
+            image: null,
+            steps: [
+              { type: 'START', name: '출발지 (지도 지정)', address: '서울 마포구 와우산로 21', cost: '0원', memo: '링크 파싱 완료' },
+              { type: '경유', name: '추천 맛집/카페', address: '서울 마포구 어울마당로 65', cost: '12,000원', memo: '시그니처 메뉴' },
+              { type: '도착', name: '도착지 휴식 장소', address: '서울 마포구 독막로 12', cost: '0원', memo: '여유로운 산책길' }
+            ],
+            comments: []
+          };
+          state.routes.unshift(withCollabDefaults(newRoute));
+          state.user.points += 15;
+          state.ui.bottomSheet = null;
+          state.ui.tab = 'myRoutes';
+          saveState();
+          showToast('지도 기반 루트가 완성되었습니다! ⭐+15 적립');
+          render();
+        }, 1000);
+      };
+
+      // Upload method C: GPX
+      window.uploadGPX = function() {
+        showToast('GPX 트랙 파일에서 이동 경로를 계산 중입니다...');
+        setTimeout(() => {
+          const newRoute = {
+            id: 'r_' + Date.now(),
+            title: 'GPX 트래킹 기록 산책로',
+            purpose: '힐링·산책',
+            tags: ['#GPX트랙', '#워킹', '#풍경'],
+            distance: '3.2km',
+            time: '55분',
+            budget: '0원',
+            likes: 0,
+            creator: state.user.name,
+            isPublic: true,
+            isMine: true,
+            image: null,
+            steps: [
+              { type: 'START', name: '트랙 시작점', address: '서울 종로구 옥인동 47', cost: '0원', memo: '출발' },
+              { type: '경유', name: '인왕산 둘레길 쉼터', address: '서울 종로구 무악동 산2-1', cost: '0원', memo: '전망 포인트' },
+              { type: '도착', name: '수성동 계곡 광장', address: '서울 종로구 옥인동 185', cost: '0원', memo: '도착 휴식' }
+            ],
+            comments: []
+          };
+          state.routes.unshift(withCollabDefaults(newRoute));
+          state.user.points += 15;
+          state.ui.bottomSheet = null;
+          state.ui.tab = 'myRoutes';
+          saveState();
+          showToast('GPX 루트가 성공적으로 등록되었습니다! ⭐+15 적립');
+          render();
+        }, 1200);
+      };
+
+      // Upload method D: GPS Only
+      window.uploadGPSOnly = function() {
+        showToast('현재 GPS 위치를 탐색하는 중입니다...');
+        const onLocationFound = (lat, lng) => {
+          const placeName = prompt('현재 위치의 장소명을 입력하세요 (비워두면 "현재 위치"):', '성수동 감성 골목') || '현재 위치';
+          const newRoute = {
+            id: 'r_' + Date.now(),
+            title: `${placeName} 주변 즉석 산책길`,
+            purpose: '힐링·산책',
+            tags: ['#GPS체크인', '#실시간', '#주변산책'],
+            distance: '0.8km',
+            time: '25분',
+            budget: '5,000원',
+            likes: 0,
+            creator: state.user.name,
+            isPublic: true,
+            isMine: true,
+            image: null,
+            steps: [
+              { type: 'START', name: placeName, address: `좌표: ${lat.toFixed(4)}, ${lng.toFixed(4)}`, cost: '0원', memo: '실시간 GPS 인증 스팟' },
+              { type: '도착', name: `${placeName} 인근 쉼터`, address: '도보 5분 거리 벤치', cost: '5,000원', memo: '여유로운 시간' }
+            ],
+            comments: []
+          };
+          state.routes.unshift(withCollabDefaults(newRoute));
+          state.user.points += 15;
+          state.ui.bottomSheet = null;
+          state.ui.tab = 'myRoutes';
+          saveState();
+          showToast('GPS 기반 루트가 생성되었습니다! ⭐+15 적립');
+          render();
+        };
+
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            pos => onLocationFound(pos.coords.latitude, pos.coords.longitude),
+            err => {
+              showToast('위치 권한 실패. 서울시청 기준 좌표로 등록합니다.');
+              onLocationFound(37.5665, 126.9780);
+            },
+            { timeout: 6000 }
+          );
+        } else {
+          onLocationFound(37.5665, 126.9780);
+        }
+      };
+
+      // ==========================================
+      // 3. Follow Route Overlay & GPS Check-in
+      // ==========================================
+      window.startFollowRoute = function(routeId) {
+        state.ui.followRouteId = routeId;
+        state.ui.followStep = 0;
+        saveState();
+        render();
+      };
+
+      window.closeFollowRoute = function() {
+        state.ui.followRouteId = null;
+        state.ui.followStep = 0;
+        saveState();
+        render();
+      };
+
+      window.gpsCheckInCurrentStep = function() {
+        const route = state.routes.find(r => r.id === state.ui.followRouteId);
+        if (!route) return;
+        const key = route.id + '_' + state.ui.followStep + '_' + state.user.name;
+        if (state.user.followCheckins[key]) {
+          showToast('이미 GPS 인증을 완료한 스텝입니다!');
+          return;
+        }
+        state.user.followCheckins[key] = true;
+        state.user.points += 5;
+        // Add comment
+        if (!route.comments) route.comments = [];
+        route.comments.unshift({
+          user: state.user.name,
+          text: `📍 [${state.user.name}] 스텝 ${state.ui.followStep + 1} GPS 인증 완료! 발도장 꾹 ✨`
+        });
+        saveState();
+        showToast('스텝 GPS 인증 성공! ⭐+5 별사탕 적립');
+        render();
+      };
+
+      // Demo-only: simulate a fellow participant checking in at the current step.
+      window.verifyParticipantGPS = function(routeId, step, name) {
+        const route = state.routes.find(r => r.id === routeId);
+        if (!route) return;
+        const key = routeId + '_' + step + '_' + name;
+        if (state.user.followCheckins[key]) return;
+        state.user.followCheckins[key] = true;
+        if (!route.editLog) route.editLog = [];
+        route.editLog.unshift({ user: name, avatar: getAvatarDisplay(name), action: `스텝 ${step + 1} GPS 인증했어요`, time: '방금' });
+        saveState();
+        showToast(`${name}님이 GPS 인증을 완료했어요! 📍`);
+        render();
+      };
+
+      window.nextFollowStep = function() {
+        const route = state.routes.find(r => r.id === state.ui.followRouteId);
+        if (!route) return;
+        if (state.ui.followStep < route.steps.length - 1) {
+          state.ui.followStep++;
+          saveState();
+          render();
+        } else {
+          // Finish modal
+          window.openFinishModal();
+        }
+      };
+
+      window.prevFollowStep = function() {
+        if (state.ui.followStep > 0) {
+          state.ui.followStep--;
+          saveState();
+          render();
+        }
+      };
+
+      window.openFinishModal = function() {
+        state.ui.bottomSheet = 'finishCertification';
+        state.ui.review = { stars: 5, text: '', images: [] };
+        render();
+      };
+
+      window.setReviewStars = function(stars) {
+        state.ui.review.stars = stars;
+        render();
+      };
+
+      window.addReviewPhoto = function() {
+        const input = document.getElementById('global-file-input');
+        input.onchange = function(e) {
+          const files = Array.from(e.target.files || []);
+          if (!files.length) return;
+          Promise.all(files.map(resizeImageFile)).then(dataUrls => {
+            dataUrls.filter(Boolean).forEach(url => state.ui.review.images.push(url));
+            showToast(`인증샷 ${files.length}장이 첨부되었습니다! 📷`);
+            render();
+          });
+        };
+        input.click();
+      };
+
+      window.completeRouteCertification = function(skipExtra = false) {
+        const route = state.routes.find(r => r.id === state.ui.followRouteId);
+        let earned = 15; // 기본 15
+        if (!skipExtra) {
+          if (state.ui.review.images && state.ui.review.images.length > 0) earned += 10;
+          if (state.ui.review.text && state.ui.review.text.trim().length > 0) earned += 5;
+        }
+        state.user.points += earned;
+        if (route && !state.user.completedRoutes.includes(route.id)) {
+          state.user.completedRoutes.push(route.id);
+        }
+        state.challenge.progress = Math.min(3, state.challenge.progress + 1);
+        state.ui.lastCompletion = { distance: route ? route.distance : '-', time: route ? route.time : '-', earned };
+        state.ui.bottomSheet = 'finishSummary';
+        saveState();
+        render();
+      };
+
+      // ==========================================
+      // 4. Shop, Customization & Economy
+      // ==========================================
+      window.openCustomShop = function() {
+        state.ui.bottomSheet = 'customShop';
+        render();
+      };
+
+      window.openChargeModal = function() {
+        state.ui.bottomSheet = 'charge';
+        state.ui.charge = { pack: null, method: null };
+        render();
+      };
+
+      window.equipItem = function(category, key) {
+        state.custom.equipped[category] = key;
+        if (category === 'theme') {
+          const color = THEME_MAP[key] || '#8B6CFF';
+          document.documentElement.style.setProperty('--primary', color);
+          // Visual flash
+          const flash = document.createElement('div');
+          flash.className = 'theme-flash';
+          document.body.appendChild(flash);
+          setTimeout(() => flash.remove(), 400);
+        }
+        showToast(`${category === 'theme' ? '테마' : category === 'avatar' ? '아바타' : '스티커'}가 적용되었습니다! ✨`);
+        saveState();
+        render();
+      };
+
+      window.buyItem = function(category, key, cost) {
+        if (state.user.points < cost) {
+          showToast(`별사탕이 부족해요! (보유: ${state.user.points}개 / 필요: ${cost}개)`);
+          return;
+        }
+        state.user.points -= cost;
+        state.custom.owned[category].push(key);
+        state.custom.equipped[category] = key;
+        showToast(`구매 완료 및 장착되었습니다! ⭐-${cost}`);
+        saveState();
+        render();
+      };
+
+      window.giftItem = function(category, key, cost) {
+        if (state.user.points < cost) {
+          showToast(`선물하기 위한 별사탕이 부족해요! ⭐ 충전소를 이용해주세요.`);
+          return;
+        }
+        state.user.points -= cost;
+        saveState();
+        const link = `keongyu.app/gift/${category}_${key}?from=${encodeURIComponent(state.user.name)}`;
+        copyText(link, '선물 링크가 복사됐어요! 친구에게 전달해보세요 🎁', 0);
+      };
+
+      window.chargePoints = function(amount, won) {
+        state.user.points += amount;
+        saveState();
+        showToast(`${won} 결제 완료! 별사탕 ${amount}개가 충전되었습니다. ⭐`);
+        render();
+      };
+
+      // 충전소: 팩 + 결제수단 선택 후 "결제하기"로 확정하는 2단계 플로우
+      window.selectChargePack = function(amount, won) {
+        state.ui.charge.pack = { amount, won };
+        render();
+      };
+
+      window.selectChargeMethod = function(method) {
+        state.ui.charge.method = method;
+        render();
+      };
+
+      window.confirmCharge = function() {
+        const { pack, method } = state.ui.charge;
+        if (!pack || !method) {
+          showToast('충전 금액과 결제수단을 모두 선택해주세요.');
+          return;
+        }
+        chargePoints(pack.amount, pack.won);
+        showToast(`${method}로 ${pack.won} 결제 완료! 별사탕 ${pack.amount}개가 충전되었습니다. ⭐`);
+        state.ui.charge = { pack: null, method: null };
+        state.ui.bottomSheet = null;
+        saveState();
+        render();
+      };
+
+      // 미션 기반 무료 언락: 특정 조건 달성 시 지정된 아이템을 무료로 지급
+      const MISSION_DEFS = [
+        { id: 'invite15', category: 'theme', key: 'peach', label: '친구 15명 초대', current: () => state.user.invites, target: 15 },
+        { id: 'complete3', category: 'avatar', key: 'fox', label: '루트 3회 완주', current: () => state.user.completedRoutes.length, target: 3 }
+      ];
+
+      function getMissionForItem(category, key) {
+        return MISSION_DEFS.find(m => m.category === category && m.key === key) || null;
+      }
+
+      window.claimMissionItem = function(category, key) {
+        const mission = getMissionForItem(category, key);
+        if (!mission || mission.current() < mission.target) return;
+        if (state.custom.owned[category].includes(key)) return;
+        state.custom.owned[category].push(key);
+        state.custom.equipped[category] = key;
+        saveState();
+        showToast(`🎁 미션 달성! ${mission.label} 보상을 받았어요.`);
+        render();
+      };
+
+      // 주간 챌린지: 오늘 인증 버튼 + 3/3 달성 시 랜덤 스티커 보상
+      window.todayChallengeCheck = function() {
+        const today = new Date().toDateString();
+        if (state.challenge.todayCheck === today) {
+          showToast('오늘은 이미 인증했어요! 내일 다시 와주세요.');
+          return;
+        }
+        state.challenge.todayCheck = today;
+        state.challenge.progress = Math.min(3, state.challenge.progress + 1);
+        saveState();
+        showToast('오늘 인증 완료! +1');
+        render();
+      };
+
+      window.claimChallengeReward = function() {
+        if (state.challenge.progress < 3 || state.challenge.completed) return;
+        const unowned = Object.keys(STICKER_MAP).filter(k => !state.custom.owned.sticker.includes(k));
+        const pick = (unowned.length ? unowned : Object.keys(STICKER_MAP))[Math.floor(Math.random() * (unowned.length ? unowned.length : Object.keys(STICKER_MAP).length))];
+        if (!state.custom.owned.sticker.includes(pick)) state.custom.owned.sticker.push(pick);
+        state.challenge.completed = true;
+        saveState();
+        showToast(`🎁 랜덤 스티커 ${STICKER_MAP[pick]} 획득!`);
+        render();
+      };
+
+      // ==========================================
+      // 4b. Collaborative Planning (함께가기)
+      // ==========================================
+      window.openCollabSheet = function(routeId) {
+        state.ui.collabSheet = { routeId };
+        render();
+      };
+
+      // Participant shape: {id, name, avatar, role: 'editor'|'viewer', isMe, isOnline, joinedAt}
+      function makeParticipant(name, isMe) {
+        return {
+          id: isMe ? 'p_me' : 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          name,
+          avatar: getAvatarDisplay(name),
+          role: 'editor',
+          isMe: !!isMe,
+          isOnline: true,
+          joinedAt: Date.now()
+        };
+      }
+
+      // A viewer can follow along and GPS check-in but cannot edit/add/delete steps.
+      function canEdit(routeId) {
+        const route = state.routes.find(r => r.id === routeId);
+        if (!route || !route.isCollaborative) return true;
+        const me = (route.participants || []).find(p => p.name === state.user.name);
+        return !me || me.role !== 'viewer';
+      }
+
+      window.addParticipant = function(routeId, name) {
+        const route = state.routes.find(r => r.id === routeId);
+        if (!route) return;
+        if (!route.participants || route.participants.length === 0) {
+          route.participants = [makeParticipant(state.user.name, true)];
+        }
+        if (route.participants.some(p => p.name === name)) return;
+        route.participants.push(makeParticipant(name, false));
+        route.isCollaborative = true;
+        if (!route.editLog) route.editLog = [];
+        route.editLog.unshift({ user: name, avatar: getAvatarDisplay(name), action: '참여했어요', time: '방금' });
+        saveState();
+        render();
+      };
+
+      window.removeParticipant = function(routeId, name) {
+        const route = state.routes.find(r => r.id === routeId);
+        if (!route || !route.participants) return;
+        route.participants = route.participants.filter(p => p.name !== name);
+        saveState();
+        showToast(`${name}님을 내보냈습니다.`);
+        render();
+      };
+
+      window.toggleParticipantRole = function(routeId, name) {
+        const route = state.routes.find(r => r.id === routeId);
+        const p = route && (route.participants || []).find(p => p.name === name);
+        if (!p) return;
+        p.role = p.role === 'viewer' ? 'editor' : 'viewer';
+        saveState();
+        showToast(`${name}님을 ${p.role === 'viewer' ? '뷰어' : '편집자'}로 변경했어요`);
+        render();
+      };
+
+      window.generateCollabInvite = function(routeId) {
+        const input = document.getElementById('collab-invite-name');
+        const name = (input && input.value.trim()) || '친구';
+        const route = state.routes.find(r => r.id === routeId);
+        if (!route) return;
+        const code = Math.random().toString(36).slice(2, 6);
+        if (!route.pendingInvites) route.pendingInvites = [];
+        route.pendingInvites.push({ code, name, createdAt: Date.now() });
+        const link = `keongyu.app/join/${routeId}?code=${code}`;
+        copyText(link, '초대 링크 복사됨! 👥', 8);
+        if (input) input.value = '';
+        // Demo simulation: friend "joins" a couple seconds after the invite link is copied.
+        setTimeout(() => addParticipant(routeId, name), 2000);
+      };
+
+      window.startCollab = function(routeId) {
+        const route = state.routes.find(r => r.id === routeId);
+        if (!route) return;
+        if (!route.participants || route.participants.length === 0) {
+          route.participants = [makeParticipant(state.user.name, true)];
+        }
+        route.isCollaborative = true;
+        state.ui.tab = 'myRoutes';
+        state.ui.collabSheet = null;
+        saveState();
+        showToast('함께가기 계획이 시작됐어요!');
+        render();
+      };
+
+      window.updateStep = function(routeId, stepIdx, newData) {
+        const route = state.routes.find(r => r.id === routeId);
+        if (!route) return;
+        route.steps[stepIdx] = { ...route.steps[stepIdx], ...newData };
+        if (!route.editLog) route.editLog = [];
+        route.editLog.unshift({ user: state.user.name, avatar: getAvatarDisplay(state.user.name), action: `수정: ${newData.name}`, time: '방금' });
+        saveState();
+        render();
+        showToast('수정됐어요 ✏️');
+      };
+
+      window.deleteStep = function(routeId, stepIdx) {
+        if (!canEdit(routeId)) {
+          showToast('뷰어는 수정할 수 없어요 👀');
+          return;
+        }
+        const route = state.routes.find(r => r.id === routeId);
+        if (!route) return;
+        if (route.steps.length <= 1) {
+          showToast('최소 한 개의 스텝은 남아있어야 해요.');
+          return;
+        }
+        if (!confirm('이 스텝을 삭제할까요?')) return;
+        const removed = route.steps.splice(stepIdx, 1)[0];
+        if (!route.editLog) route.editLog = [];
+        route.editLog.unshift({ user: state.user.name, avatar: getAvatarDisplay(state.user.name), action: `삭제: ${removed.name}`, time: '방금' });
+        if (state.ui.followStep >= route.steps.length) state.ui.followStep = route.steps.length - 1;
+        saveState();
+        render();
+        showToast('스텝이 삭제됐어요 🗑️');
+      };
+
+      window.addStep = function(routeId, afterIdx, newStep) {
+        const route = state.routes.find(r => r.id === routeId);
+        if (!route) return;
+        route.steps.splice(afterIdx + 1, 0, newStep);
+        if (!route.editLog) route.editLog = [];
+        route.editLog.unshift({ user: state.user.name, avatar: getAvatarDisplay(state.user.name), action: `추가: ${newStep.name}`, time: '방금' });
+        saveState();
+        render();
+      };
+
+      window.openCollabEditSheet = function(routeId, stepIndex) {
+        if (!canEdit(routeId)) {
+          showToast('뷰어는 수정할 수 없어요 👀');
+          return;
+        }
+        state.ui.collabEditSheet = { routeId, stepIndex, mode: 'edit' };
+        render();
+      };
+
+      window.openAddStepSheet = function(routeId, afterIdx) {
+        if (!canEdit(routeId)) {
+          showToast('뷰어는 수정할 수 없어요 👀');
+          return;
+        }
+        state.ui.collabEditSheet = { routeId, stepIndex: null, mode: 'add', afterIdx };
+        render();
+      };
+
+      window.saveStepForm = function() {
+        const sheet = state.ui.collabEditSheet;
+        if (!sheet) return;
+        if (!canEdit(sheet.routeId)) {
+          showToast('뷰어는 수정할 수 없어요 👀');
+          state.ui.collabEditSheet = null;
+          render();
+          return;
+        }
+        const name = document.getElementById('step-form-name')?.value.trim();
+        const address = document.getElementById('step-form-address')?.value.trim();
+        const memo = document.getElementById('step-form-memo')?.value.trim();
+        if (!name) {
+          showToast('장소명을 입력해주세요.');
+          return;
+        }
+        if (sheet.mode === 'add') {
+          addStep(sheet.routeId, sheet.afterIdx, { type: '경유', name, address: address || '', cost: '0원', memo: memo || '' });
+        } else {
+          updateStep(sheet.routeId, sheet.stepIndex, { name, address: address || '', memo: memo || '' });
+        }
+        state.ui.collabEditSheet = null;
+        saveState();
+        render();
+      };
+
+      window.shareCollabLink = function(routeId) {
+        const link = `keongyu.app/join/${routeId}`;
+        copyText(link, '함께가기 참여 링크가 복사되었습니다! 👥', 8);
+      };
+
+      // ==========================================
+      // 5. Render Engine (Preserving Input UX)
+      // ==========================================
+      function render() {
+        // 1. Preserve active input focus & selection
+        const activeEl = document.activeElement;
+        const activeId = activeEl ? activeEl.id : null;
+        const selStart = activeEl && ('selectionStart' in activeEl) ? activeEl.selectionStart : null;
+        const selEnd = activeEl && ('selectionEnd' in activeEl) ? activeEl.selectionEnd : null;
+
+        // 2. Set theme color
+        const themeColor = THEME_MAP[state.custom.equipped.theme] || '#8B6CFF';
+        document.documentElement.style.setProperty('--primary', themeColor);
+
+        // 2b. Lock background scroll while a sheet/overlay covers the screen
+        // (prevents the page behind a bottom sheet from rubber-banding on mobile).
+        const anyOverlayOpen = !!(state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.cameraActive || state.ui.followRouteId);
+        document.body.style.overflow = anyOverlayOpen ? 'hidden' : '';
+
+        // 3. Count unread notifications
+        const unreadCount = state.notifications.filter(n => !n.read).length;
+
+        // User Tier
+        const myTier = getCreatorTier(state.user.name);
+
+        const root = document.getElementById('root');
+        if (!root) return;
+
+        let html = '';
+
+        // Header
+        html += `
+          <header>
+            <div class="logo-box" onclick="setTab('explore')">
+              <span>KEONGYU</span>
+              <span style="font-size:12px; color:var(--text-sub); font-weight:700;">경유</span>
+            </div>
+            <div class="header-right">
+              <div class="point-chip" onclick="openChargeModal()">
+                <span>⭐</span>
+                <span>${state.user.points}</span>
+              </div>
+              <div class="icon-btn" onclick="openNotifInbox()">
+                <span>🔔</span>
+                ${unreadCount > 0 ? `<div class="badge-dot">${unreadCount}</div>` : ''}
+              </div>
+              <div class="avatar-wrapper" onclick="setTab('myRoutes')" style="border:${myTier.border}; cursor:pointer; width:34px; height:34px;">
+                <span>${AVATAR_MAP[state.custom.equipped.avatar] || '🐻'}</span>
+                <span class="sticker-badge">${STICKER_MAP[state.custom.equipped.sticker] || '❤️'}</span>
+              </div>
+              <button class="upload-btn" onclick="openUploadSheet()">
+                <span>+</span><span>업로드</span>
+              </button>
+            </div>
+          </header>
+        `;
+
+        // Main Body by Tab
+        html += `<main class="content-area">`;
+
+        if (state.ui.tab === 'explore') {
+          // 1. Growth Banner
+          html += `
+            <div class="banner" onclick="setTab('growth')">
+              <div>
+                <div style="font-size:14px; font-weight:800;">친구 초대하면 스티커 3종 🎁</div>
+                <div style="font-size:11px; opacity:0.9; margin-top:2px;">링크 공유하고 별사탕과 한정 스티커 받기</div>
+              </div>
+              <div style="font-size:18px;">➔</div>
+            </div>
+          `;
+
+          // 2. Search Box
+          html += `
+            <div class="search-box">
+              <span class="icon">🔍</span>
+              <input type="text" id="search-input" placeholder="스팟, 카페, 목적, 태그 검색..." value="${esc(state.filter.query)}" oninput="onSearchInput(event)" oncompositionstart="onSearchCompositionStart(event)" oncompositionend="onSearchCompositionEnd(event)" />
+            </div>
+          `;
+
+          // 3. Filter Scroll
+          const purposes = ['⭐ 구독', '전체', '감성카페', '힐링·산책', '데이트', '작업·몰입', '야경·드라이브', '가성비'];
+          html += `<div class="filter-scroll">`;
+          purposes.forEach(p => {
+            const isSub = p === '⭐ 구독';
+            const isActive = state.filter.purpose === p;
+            html += `
+              <div class="filter-chip ${isSub ? 'sub-chip' : ''} ${isActive ? 'active' : ''}" onclick="setPurposeFilter('${p}')">
+                ${p}
+              </div>
+            `;
+          });
+          html += `</div>`;
+
+          // 4. Routes List Filtering
+          let filtered = state.routes.filter(r => {
+            if (state.filter.purpose === '⭐ 구독') {
+              if (!state.subscriptions[r.creator]?.subscribed) return false;
+            } else if (state.filter.purpose !== '전체') {
+              if (r.purpose !== state.filter.purpose) return false;
+            }
+            if (state.filter.query) {
+              const q = state.filter.query.toLowerCase();
+              const matchTitle = r.title.toLowerCase().includes(q);
+              const matchCreator = r.creator.toLowerCase().includes(q);
+              const matchTags = (r.tags || []).some(t => t.toLowerCase().includes(q));
+              const matchSteps = (r.steps || []).some(s => s.name.toLowerCase().includes(q) || s.memo.toLowerCase().includes(q));
+              if (!matchTitle && !matchCreator && !matchTags && !matchSteps) return false;
+            }
+            return true;
+          });
+
+          if (filtered.length === 0) {
+            html += `
+              <div style="text-align:center; padding:50px 20px; color:var(--text-sub); background:#FFF; border-radius:18px; border:1px solid var(--border);">
+                <div style="font-size:36px; margin-bottom:10px;">🍃</div>
+                <div style="font-weight:800; font-size:15px; margin-bottom:6px;">조건에 맞는 루트가 없어요</div>
+                <div style="font-size:12px; margin-bottom:14px;">${state.filter.purpose === '⭐ 구독' ? '크리에이터를 구독하면 새 루트가 피드에 나타나요!' : '검색어를 변경하거나 필터를 초기화해보세요.'}</div>
+                <button class="cta-btn" onclick="resetFilters()">전체 루트 보기</button>
+              </div>
+            `;
+          } else {
+            filtered.forEach(r => {
+              const tier = getCreatorTier(r.creator);
+              const isSub = !!state.subscriptions[r.creator]?.subscribed;
+              const notifType = state.subscriptions[r.creator]?.notif || 'all';
+              const bellIcon = notifType === 'none' ? '🔕' : notifType === 'personal' ? '🔔' : '🔔';
+              const bellColor = notifType === 'none' ? '#999' : notifType === 'personal' ? '#FFC61C' : 'var(--primary)';
+
+              html += `
+                <div class="route-card">
+                  <div class="card-top">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                      <span class="purpose-pill">${r.purpose}</span>
+                      ${r.isCollaborative ? `<span class="collab-pill">👥 함께가는 중 (${(r.participants || []).length}명)</span>` : ''}
+                    </div>
+                    <button class="like-btn" onclick="toggleLike('${r.id}')">
+                      <span>❤️</span>
+                      <span>${r.likes || 0}</span>
+                    </button>
+                  </div>
+                  <div class="card-title">${esc(r.title)}</div>
+                  <div class="card-pills">
+                    <span class="info-pill">📍 ${r.distance}</span>
+                    <span class="info-pill">⏱️ ${r.time}</span>
+                    <span class="info-pill">💰 ${r.budget}</span>
+                    ${(r.tags || []).map(t => `<span class="info-pill" style="color:var(--primary);">${t}</span>`).join('')}
+                  </div>
+                  ${renderRouteThumb(r, 140)}
+                  <div class="card-bottom">
+                    <div class="creator-info">
+                      <div class="avatar-wrapper" style="border:${tier.border}; ${tier.glow !== 'none' ? `box-shadow:${tier.glow};` : ''}">
+                        <span>${getAvatarDisplay(r.creator)}</span>
+                        <span class="sticker-badge">${getStickerDisplay(r.creator)}</span>
+                      </div>
+                      <div>
+                        <div style="font-size:13px; font-weight:800; display:flex; align-items:center; gap:2px;">
+                          <span>${esc(r.creator)}</span>
+                          <span style="font-size:11px;">${tier.icon}</span>
+                          ${tier.ribbon ? `<span class="ribbon-tag" title="인증 크리에이터">🎗️</span>` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="card-actions">
+                      ${r.creator !== state.user.name ? `
+                        <button class="sub-btn ${isSub ? 'subscribed' : ''}" data-creator="${esc(r.creator)}" onclick="toggleSubscribe(this.dataset.creator)">
+                          ${isSub ? '구독중' : '구독'}
+                        </button>
+                        ${isSub ? `
+                          <button class="icon-btn" style="width:30px; height:30px; font-size:13px; color:${bellColor};" data-creator="${esc(r.creator)}" onclick="openNotifSetting(this.dataset.creator)" title="알림 설정">
+                            ${bellIcon}
+                          </button>
+                        ` : ''}
+                      ` : `
+                        <span style="font-size:11px; font-weight:700; color:var(--primary); background:#F0F0FF; padding:3px 8px; border-radius:12px;">내 루트</span>
+                      `}
+                      <button class="icon-btn" style="width:30px; height:30px; font-size:13px;" onclick="openShareSheet('${r.id}')" title="공유">
+                        ↗
+                      </button>
+                      <button class="btn-secondary" onclick="openCollabSheet('${r.id}')">👥 함께가기</button>
+                      <button class="cta-btn" onclick="startFollowRoute('${r.id}')">
+                        따라가기
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            });
+          }
+        } else if (state.ui.tab === 'myRoutes') {
+          // My Routes Tab
+          const myRoutes = state.routes.filter(r => r.isMine);
+          const collabRoutes = state.routes.filter(r => r.isCollaborative);
+          const totalLikes = myTier.likes;
+          const nextTarget = myTier.next ? myTier.next - totalLikes : 0;
+          const subscribedList = Object.keys(state.subscriptions).filter(k => state.subscriptions[k].subscribed);
+
+          html += `
+            ${collabRoutes.length > 0 ? `
+              <!-- Collaborative Plans -->
+              <div>
+                <div style="font-size:14px; font-weight:800; margin-bottom:8px;">👥 함께하는 계획 ${collabRoutes.length}개</div>
+                <div class="filter-scroll" style="gap:12px; padding:4px 0;">
+                  ${collabRoutes.map(r => `
+                    <div style="min-width:200px; background:#FFF; border-radius:16px; border:1px solid var(--border); padding:12px; display:flex; flex-direction:column; gap:8px;">
+                      <div class="participants-stack">
+                        ${(r.participants || []).slice(0, 3).map(p => `<div class="avatar-wrapper" style="width:28px; height:28px; font-size:14px;">${p.avatar || hashNameToAvatar(p.name)}</div>`).join('')}
+                        ${(r.participants || []).length > 3 ? `<div class="avatar-wrapper" style="width:28px; height:28px; font-size:11px; font-weight:800;">+${r.participants.length - 3}</div>` : ''}
+                      </div>
+                      <div style="font-size:13px; font-weight:800; line-height:1.3;">${esc(r.title)}</div>
+                      <div style="font-size:11px; color:var(--text-sub);">${(r.participants || []).length}명 · ${r.steps.length}곳</div>
+                      <button class="cta-btn" style="align-self:flex-start;" onclick="startFollowRoute('${r.id}')">열기</button>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- Top Profile Card -->
+            <div style="background:#FFF; border-radius:20px; padding:18px; border:1px solid var(--border); box-shadow:0 2px 8px rgba(0,0,0,0.03); display:flex; flex-direction:column; gap:14px;">
+              <div style="display:flex; align-items:center; gap:16px;">
+                <div class="avatar-wrapper" style="width:80px; height:80px; font-size:42px; border:${myTier.border}; ${myTier.glow !== 'none' ? `box-shadow:${myTier.glow};` : ''}">
+                  <span>${AVATAR_MAP[state.custom.equipped.avatar] || '🐻'}</span>
+                  <span class="sticker-badge" style="font-size:20px; bottom:-4px; right:-4px;">${STICKER_MAP[state.custom.equipped.sticker] || '❤️'}</span>
+                </div>
+                <div style="flex:1;">
+                  <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <div style="font-size:18px; font-weight:900;">${esc(state.user.name)}</div>
+                    <button class="cta-btn" style="padding:4px 10px; font-size:11px;" onclick="openCustomShop()">🎨 꾸미기</button>
+                  </div>
+                  <div style="font-size:13px; font-weight:700; color:var(--text-sub); margin-top:2px;">
+                    ${myTier.icon} ${myTier.name} 크리에이터 (❤️ ${totalLikes})
+                  </div>
+                  ${myTier.next ? `
+                    <div style="font-size:11px; color:#999; margin-top:4px;">다음 등급까지 하트 ${nextTarget}개 남음</div>
+                  ` : `
+                    <div style="font-size:11px; color:#5BA9FF; margin-top:4px;">최고 등급 달성! 💎</div>
+                  `}
+                  <div style="font-size:13px; font-weight:800; color:#E68A00; margin-top:6px;">
+                    보유 별사탕 ⭐ ${state.user.points}개
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Subscribed Creators Horizontal Scroll -->
+            <div>
+              <div style="font-size:14px; font-weight:800; margin-bottom:8px;">구독 중인 크리에이터 (${subscribedList.length})</div>
+              <div class="filter-scroll" style="gap:12px; padding:4px 0;">
+                ${subscribedList.length === 0 ? `
+                  <div style="font-size:12px; color:var(--text-sub); padding:10px 0;">아직 구독한 크리에이터가 없어요. 탐색에서 관심 크리에이터를 구독해보세요!</div>
+                ` : subscribedList.map(name => {
+                  const sTier = getCreatorTier(name);
+                  const notif = state.subscriptions[name]?.notif || 'all';
+                  return `
+                    <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; min-width:60px;" data-name="${esc(name)}" onclick="openNotifSetting(this.dataset.name)">
+                      <div class="avatar-wrapper" style="width:50px; height:50px; font-size:26px; border:${sTier.border};">
+                        <span>${hashNameToAvatar(name)}</span>
+                        <span style="position:absolute; bottom:-2px; right:-2px; font-size:11px;">${notif === 'none' ? '🔕' : '🔔'}</span>
+                      </div>
+                      <div style="font-size:11px; font-weight:700; text-align:center; max-width:60px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(name)}</div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <!-- My Routes List -->
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div style="font-size:14px; font-weight:800;">내 루트 리스트 (${myRoutes.length})</div>
+                <button class="upload-btn" style="padding:4px 10px; font-size:12px;" onclick="openUploadSheet()">+ 새 루트</button>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:12px;">
+                ${myRoutes.length === 0 ? `
+                  <div style="text-align:center; padding:40px 20px; background:#FFF; border-radius:18px; border:1px solid var(--border); color:var(--text-sub);">
+                    <div style="font-size:32px; margin-bottom:8px;">🗺️</div>
+                    <div style="font-weight:700;">아직 등록된 내 루트가 없어요</div>
+                    <div style="font-size:12px; margin-top:4px;">사진이나 지도 링크로 첫 루트를 만들어보세요!</div>
+                  </div>
+                ` : myRoutes.map(r => `
+                  <div class="route-card">
+                    <div class="card-top">
+                      <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="purpose-pill">${r.purpose}</span>
+                        ${r.isCollaborative ? `<span class="collab-pill">👥 함께가는 중 (${(r.participants || []).length}명)</span>` : ''}
+                      </div>
+                      <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:11px; font-weight:700; color:${r.isPublic ? '#2DD4A0' : '#999'};">
+                          ${r.isPublic ? '🟢 공개' : '🔒 비공개'}
+                        </span>
+                        <span style="font-size:12px; font-weight:700; color:#FF4B6E;">❤️ ${r.likes || 0}</span>
+                      </div>
+                    </div>
+                    <div class="card-title">${esc(r.title)}</div>
+                    <div class="card-pills">
+                      <span class="info-pill">📍 ${r.distance}</span>
+                      <span class="info-pill">⏱️ ${r.time}</span>
+                      <span class="info-pill">스텝 ${r.steps.length}개</span>
+                    </div>
+                    ${renderRouteThumb(r, 110)}
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding-top:6px; border-top:1px solid #F0F0EE;">
+                      <button class="cta-btn" style="background:#555;" onclick="startFollowRoute('${r.id}')">미리보기</button>
+                      <div style="display:flex; gap:6px;">
+                        <button class="btn-secondary" onclick="openCollabSheet('${r.id}')">👥 함께가기</button>
+                        <button class="cta-btn" style="background:#FFF; color:var(--text); border:1px solid var(--border);" onclick="openShareSheet('${r.id}')">공유</button>
+                        <button class="cta-btn" onclick="startFollowRoute('${r.id}')">따라가기</button>
+                      </div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        } else if (state.ui.tab === 'growth') {
+          // Growth Tab
+          const inviteLink = `https://keongyu.app/invite?code=USER_${state.user.invites}`;
+          html += `
+            <!-- Invite Link Card -->
+            <div style="background:linear-gradient(135deg, #8B6CFF, #5BA9FF); border-radius:20px; padding:18px; color:white; box-shadow:0 4px 16px rgba(139,108,255,0.3);">
+              <div style="font-size:16px; font-weight:900;">친구 초대하고 별사탕 받기 🎁</div>
+              <div style="font-size:12px; opacity:0.9; margin-top:4px;">초대받은 친구도 +20개, 나도 +25개 별사탕 적립!</div>
+              <div style="background:rgba(255,255,255,0.2); border-radius:12px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center; margin-top:12px;">
+                <span style="font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;">${inviteLink}</span>
+                <div style="display:flex; gap:6px;">
+                  <button class="cta-btn" style="background:#FFF; color:var(--primary); padding:6px 10px; font-size:12px;" onclick="sendInvite('링크')">🔗 복사</button>
+                  <button class="cta-btn" style="background:#FEE500; color:#3C1E1E; padding:6px 10px; font-size:12px;" onclick="sendInvite('카카오톡')">💬 카카오톡</button>
+                </div>
+              </div>
+              <div style="font-size:11px; margin-top:8px; opacity:0.85;">지금까지 <strong>${state.user.invites}명</strong> 초대 성공 · 스티커 <strong>${state.user.stickersEarned}개</strong> 획득</div>
+            </div>
+
+            <!-- Weekly Challenge -->
+            <div style="background:#FFF; border-radius:18px; padding:16px; border:1px solid var(--border);">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div style="font-size:14px; font-weight:800;">주간 챌린지: 루트 완주 3회</div>
+                <div style="font-size:13px; font-weight:800; color:var(--primary);">${state.challenge.progress}/3 달성</div>
+              </div>
+              <div style="width:100%; height:8px; background:#EEE; border-radius:4px; overflow:hidden; margin-bottom:8px;">
+                <div style="width:${(state.challenge.progress / 3) * 100}%; height:100%; background:var(--primary); transition:width 0.3s;"></div>
+              </div>
+              ${state.challenge.completed ? `
+                <div style="font-size:12px; color:var(--mint); font-weight:700;">✅ 이번 주 챌린지 보상을 이미 받았어요!</div>
+              ` : state.challenge.progress >= 3 ? `
+                <button class="cta-btn" style="width:100%; padding:10px; font-size:13px; background:var(--mint);" onclick="claimChallengeReward()">🎁 받기 (랜덤 스티커)</button>
+              ` : `
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                  <div style="font-size:12px; color:var(--text-sub);">루트를 따라가거나 오늘 인증하고 챌린지를 완성하세요!</div>
+                  <button class="cta-btn" style="padding:6px 12px; font-size:12px; flex-shrink:0; opacity:${state.challenge.todayCheck === new Date().toDateString() ? '0.5' : '1'};" ${state.challenge.todayCheck === new Date().toDateString() ? 'disabled' : ''} onclick="todayChallengeCheck()">${state.challenge.todayCheck === new Date().toDateString() ? '오늘 인증 완료' : '오늘 인증 +1'}</button>
+                </div>
+              `}
+            </div>
+
+            <!-- Invite Ranking -->
+            <div style="background:#FFF; border-radius:18px; padding:16px; border:1px solid var(--border);">
+              <div style="font-size:14px; font-weight:800; margin-bottom:12px;">🏆 이달의 초대왕 랭킹</div>
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                ${[
+                  { rank: 1, name: '성수러버민지', count: 48, avatar: '🐰', sticker: '👑' },
+                  { rank: 2, name: '힙스터준', count: 32, avatar: '🐯', sticker: '✨' },
+                  { rank: 3, name: '댕댕산책러', count: 19, avatar: '🐶', sticker: '🔥' },
+                  { rank: 4, name: state.user.name, count: state.user.invites, avatar: AVATAR_MAP[state.custom.equipped.avatar] || '🐻', sticker: STICKER_MAP[state.custom.equipped.sticker] || '❤️', isMe: true }
+                ].map(u => `
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; background:${u.isMe ? 'rgba(139,108,255,0.08)' : '#F9F9F8'}; border-radius:12px;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span style="font-weight:900; font-size:13px; width:18px;">${u.rank}</span>
+                      <span style="font-size:18px;">${u.avatar}</span>
+                      <span style="font-size:11px;">${u.sticker}</span>
+                      <span style="font-size:13px; font-weight:800;">${esc(u.name)} ${u.isMe ? '(나)' : ''}</span>
+                    </div>
+                    <span style="font-size:12px; font-weight:800; color:var(--primary);">${u.count}명 초대</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Grade Criteria Table -->
+            <div style="background:#FFF; border-radius:18px; padding:16px; border:1px solid var(--border);">
+              <div style="font-size:14px; font-weight:800; margin-bottom:10px;">등급 기준표 안내</div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px;">
+                <div style="padding:8px; border:1px solid #E5E8EB; border-radius:10px;">🥉 <strong>브론즈</strong>: 하트 0+</div>
+                <div style="padding:8px; border:1px solid #E5E8EB; border-radius:10px;">🥈 <strong>실버</strong>: 하트 150+</div>
+                <div style="padding:8px; border:1px solid #E5E8EB; border-radius:10px;">🥇 <strong>골드</strong>: 하트 400+ (리본)</div>
+                <div style="padding:8px; border:1px solid #E5E8EB; border-radius:10px;">💎 <strong>다이아</strong>: 하트 800+ (글로우)</div>
+              </div>
+            </div>
+          `;
+        }
+
+        html += `</main>`;
+
+        // Bottom Navigation Bar
+        html += `
+          <nav class="bottom-nav">
+            <div class="nav-item ${state.ui.tab === 'explore' ? 'active' : ''}" onclick="setTab('explore')">
+              <span class="icon">🗺️</span>
+              <span>탐색</span>
+            </div>
+            <div class="nav-item ${state.ui.tab === 'myRoutes' ? 'active' : ''}" onclick="setTab('myRoutes')">
+              <span class="icon">📁</span>
+              <span>마이루트</span>
+            </div>
+            <div class="nav-item ${state.ui.tab === 'growth' ? 'active' : ''}" onclick="setTab('growth')">
+              <span class="icon">🎁</span>
+              <span>초대/성장</span>
+            </div>
+          </nav>
+        `;
+
+        // ==========================================
+        // 6. Overlays & Sheets
+        // ==========================================
+
+        // A. Follow Route Fullscreen Overlay
+        if (state.ui.followRouteId) {
+          const route = state.routes.find(r => r.id === state.ui.followRouteId) || state.routes[0];
+          const totalSteps = route.steps.length;
+          const currentStep = route.steps[state.ui.followStep] || route.steps[0];
+          const checkinKey = route.id + '_' + state.ui.followStep + '_' + state.user.name;
+          const isChecked = !!state.user.followCheckins[checkinKey];
+          const participants = (route.participants && route.participants.length) ? route.participants : [{ name: state.user.name, avatar: getAvatarDisplay(state.user.name) }];
+
+          html += `
+            <div class="fullscreen-overlay">
+              <div class="overlay-inner">
+                <!-- Top Nav -->
+                <div style="padding:14px 16px; background:#FFF; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
+                  <button class="icon-btn" onclick="closeFollowRoute()">✕</button>
+                  <div style="display:flex; align-items:center; gap:6px; max-width:260px; overflow:hidden;">
+                    <div class="avatar-wrapper" style="width:24px; height:24px; font-size:13px; flex-shrink:0;">${getAvatarDisplay(route.creator)}</div>
+                    <div style="font-size:14px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(route.title)}</div>
+                  </div>
+                  <div style="font-size:12px; font-weight:800; color:var(--primary); flex-shrink:0;">${state.ui.followStep + 1}/${totalSteps}</div>
+                </div>
+
+                ${route.isCollaborative ? `
+                  <div style="padding:8px 16px; background:#FAFAF8; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <div class="participants-stack">
+                        ${participants.slice(0, 3).map(p => `<div class="avatar-wrapper" style="width:26px; height:26px; font-size:13px;">${p.avatar || hashNameToAvatar(p.name)}</div>`).join('')}
+                        ${participants.length > 3 ? `<div class="avatar-wrapper" style="width:26px; height:26px; font-size:10px; font-weight:800;">+${participants.length - 3}</div>` : ''}
+                      </div>
+                      <span style="font-size:12px; font-weight:700; color:var(--text-sub);">👥 ${participants.length}명과 함께</span>
+                    </div>
+                    <button class="btn-secondary" style="padding:5px 10px; font-size:11px;" onclick="openCollabSheet('${route.id}')">+ 친구 초대</button>
+                  </div>
+                ` : ''}
+
+                <!-- Step Segment Bar -->
+                <div style="display:flex; height:4px; background:#EEE;">
+                  ${route.steps.map((_, i) => `
+                    <div style="flex:1; background:${i <= state.ui.followStep ? 'var(--primary)' : '#E5E8EB'}; margin:0 1px;"></div>
+                  `).join('')}
+                </div>
+
+                <!-- Step Body -->
+                <div style="padding:18px 16px; flex:1; overflow-y:auto; overscroll-behavior:contain; display:flex; flex-direction:column; gap:14px;">
+                  <div style="background:#FFF; border-radius:20px; padding:20px; border:1px solid var(--border); box-shadow:0 4px 16px rgba(0,0,0,0.04); display:flex; flex-direction:column; gap:12px; position:relative; overflow:hidden;">
+                    <div style="position:absolute; top:10px; right:14px; font-size:42px; opacity:0.16; transform:rotate(12deg); pointer-events:none;">${getStickerDisplay(route.creator)}</div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span class="purpose-pill" style="background:${currentStep.type === 'START' ? '#E8F5E9' : currentStep.type === '도착' ? '#FFEBEE' : '#EDE7F6'}; color:${currentStep.type === 'START' ? '#2E7D32' : currentStep.type === '도착' ? '#C62828' : 'var(--primary)'}; font-size:12px;">
+                        ${currentStep.type}
+                      </span>
+                      <span style="font-size:12px; font-weight:700; color:var(--text-sub);">예상비용: ${currentStep.cost}</span>
+                    </div>
+
+                    <div style="font-size:18px; font-weight:900;">${esc(currentStep.name)}</div>
+                    <div style="font-size:13px; color:var(--text-sub);">📍 ${esc(currentStep.address)}</div>
+
+                    <div style="background:#F9F9F8; border-radius:12px; padding:12px; font-size:13px; line-height:1.5;">
+                      💡 <strong>크리에이터 메모:</strong><br/>${esc(currentStep.memo)}
+                    </div>
+
+                    ${route.isCollaborative ? `
+                      <div class="step-mini-actions" style="${canEdit(route.id) ? '' : 'opacity:0.5;'}">
+                        <button class="step-mini-btn" onclick="openCollabEditSheet('${route.id}', ${state.ui.followStep})">✏️ 수정</button>
+                        <button class="step-mini-btn" onclick="deleteStep('${route.id}', ${state.ui.followStep})">🗑️ 삭제</button>
+                        <button class="step-mini-btn" onclick="openAddStepSheet('${route.id}', ${state.ui.followStep})">➕ 아래에 추가</button>
+                      </div>
+                    ` : ''}
+
+                    <!-- GPS Check-in -->
+                    ${route.isCollaborative ? `
+                      <div style="display:flex; flex-direction:column; gap:8px;">
+                        ${participants.map(p => {
+                          const pKey = route.id + '_' + state.ui.followStep + '_' + p.name;
+                          const pChecked = !!state.user.followCheckins[pKey];
+                          const isMe = p.name === state.user.name;
+                          return `
+                            <button class="cta-btn" style="padding:10px; font-size:13px; background:${pChecked ? '#2DD4A0' : (isMe ? 'var(--primary)' : '#EEE')}; color:${pChecked ? '#FFF' : (isMe ? '#FFF' : 'var(--text)')};" data-route-id="${esc(route.id)}" data-step="${state.ui.followStep}" data-name="${esc(p.name)}" onclick="${isMe ? 'gpsCheckInCurrentStep()' : 'verifyParticipantGPS(this.dataset.routeId, Number(this.dataset.step), this.dataset.name)'}">
+                              ${p.avatar || ''} ${isMe ? '나' : esc(p.name)} 인증 ${pChecked ? '✅' : (isMe ? '📍 (+5⭐)' : '⏳')}
+                            </button>
+                          `;
+                        }).join('')}
+                      </div>
+                    ` : `
+                      <button class="cta-btn" style="padding:12px; font-size:14px; background:${isChecked ? '#2DD4A0' : 'var(--primary)'};" onclick="gpsCheckInCurrentStep()">
+                        ${isChecked ? '✓ 현 위치 GPS 인증 완료' : '📍 이 스텝 GPS 인증하기 (+5⭐)'}
+                      </button>
+                    `}
+                  </div>
+
+                  <!-- Comments section for social proof -->
+                  <div style="background:#FFF; border-radius:18px; padding:16px; border:1px solid var(--border);">
+                    <div style="font-size:13px; font-weight:800; margin-bottom:8px;">실시간 발도장 댓글</div>
+                    ${(route.comments && route.comments.length > 0) ? route.comments.map(c => `
+                      <div style="font-size:12px; padding:6px 0; border-bottom:1px solid #F0F0EE;">
+                        <strong>${esc(c.user)}</strong>: ${esc(c.text)}
+                      </div>
+                    `).join('') : `
+                      <div style="font-size:12px; color:#999;">아직 댓글이 없습니다. GPS 인증 시 자동 등록됩니다!</div>
+                    `}
+                  </div>
+
+                  ${(state.ui.followStep === totalSteps - 1 && route.editLog && route.editLog.length > 0) ? `
+                    <div style="background:#FFF; border-radius:18px; padding:16px; border:1px solid var(--border);">
+                      <div style="font-size:13px; font-weight:800; margin-bottom:4px;">📝 수정 타임라인</div>
+                      ${route.editLog.slice(0, 5).map(l => `
+                        <div class="edit-log-item">
+                          <span>${l.avatar || ''}</span>
+                          <span style="font-weight:700;">${esc(l.user)}</span>
+                          <span style="color:var(--text-sub);">${esc(l.action)}</span>
+                          <span style="margin-left:auto; color:#999;">${l.time}</span>
+                        </div>
+                      `).join('')}
+                    </div>
+                  ` : ''}
+                </div>
+
+                <!-- Bottom Follow Controls -->
+                <div style="padding:12px 16px; background:#FFF; border-top:1px solid var(--border); display:flex; gap:10px;">
+                  <button class="cta-btn" style="background:#EEE; color:${state.ui.followStep === 0 ? '#999' : 'var(--text)'}; opacity:${state.ui.followStep === 0 ? '0.5' : '1'}; flex:1;" ${state.ui.followStep === 0 ? 'disabled' : ''} onclick="prevFollowStep()">
+                    이전
+                  </button>
+                  <button class="cta-btn" style="flex:2;" onclick="nextFollowStep()">
+                    ${state.ui.followStep === totalSteps - 1 ? '완주하고 인증하기 🎉' : '다음 스텝 ➔'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        // A2. Live Camera Overlay
+        if (state.ui.cameraActive) {
+          html += `
+            <div class="fullscreen-overlay">
+              <div class="overlay-inner" style="padding:0; background:#000; position:relative;">
+                <video id="camera-video" autoplay playsinline muted style="width:100%; height:100%; object-fit:cover; background:#000;"></video>
+                <div style="position:absolute; top:0; left:0; right:0; padding:14px 16px; display:flex; justify-content:space-between; align-items:center;">
+                  <button class="icon-btn" onclick="closeSheet()">✕</button>
+                  <div style="background:rgba(0,0,0,0.5); color:#FFF; font-size:12px; font-weight:700; padding:6px 12px; border-radius:14px;">📸 ${state.tempImages.length}장 촬영됨</div>
+                  <button class="icon-btn" onclick="switchCameraFacing()">🔄</button>
+                </div>
+                <div style="position:absolute; bottom:0; left:0; right:0; padding:20px 16px 28px; display:flex; align-items:center; justify-content:center; gap:14px; background:linear-gradient(transparent, rgba(0,0,0,0.65));">
+                  <button class="cta-btn" style="background:rgba(255,255,255,0.15); color:#FFF; flex:1;" onclick="closeSheet()">취소</button>
+                  <button style="width:60px; height:60px; border-radius:50%; background:#FFF; border:4px solid rgba(255,255,255,0.4); cursor:pointer; flex-shrink:0;" onclick="captureFrame()"></button>
+                  <button class="cta-btn" style="flex:1; opacity:${state.tempImages.length === 0 ? '0.5' : '1'};" ${state.tempImages.length === 0 ? 'disabled' : ''} onclick="finishLiveCapture()">완료 (${state.tempImages.length})</button>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        // B. Notification Settings Sheet (YouTube Style V3)
+        if (state.ui.bottomSheet === 'notifSetting' && state.ui.notifSheetCreator) {
+          const creator = state.ui.notifSheetCreator;
+          const currentNotif = state.subscriptions[creator]?.notif || 'all';
+          const tier = getCreatorTier(creator);
+
+          html += `
+            <div class="sheet-backdrop" onclick="closeSheet()">
+              <div class="bottom-sheet" onclick="event.stopPropagation()">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <div class="avatar-wrapper" style="border:${tier.border}; width:36px; height:36px;">
+                      <span>${hashNameToAvatar(creator)}</span>
+                    </div>
+                    <div>
+                      <div style="font-size:15px; font-weight:900;">${esc(creator)}</div>
+                      <div style="font-size:12px; color:var(--text-sub);">알림 설정</div>
+                    </div>
+                  </div>
+                  <button class="icon-btn" onclick="closeSheet()">✕</button>
+                </div>
+
+                <div>
+                  <div class="radio-item ${currentNotif === 'all' ? 'selected' : ''}" onclick="setNotifOption('all')">
+                    <div>
+                      <div style="font-size:14px; font-weight:800;">🔔 전체</div>
+                      <div style="font-size:12px; color:var(--text-sub); margin-top:2px;">모든 새 루트 알림 (이 채널의 모든 새 루트를 알려드려요)</div>
+                    </div>
+                    <input type="radio" name="notif" ${currentNotif === 'all' ? 'checked' : ''} />
+                  </div>
+
+                  <div class="radio-item ${currentNotif === 'personal' ? 'selected' : ''}" onclick="setNotifOption('personal')">
+                    <div>
+                      <div style="font-size:14px; font-weight:800;">🔔 맞춤 설정</div>
+                      <div style="font-size:12px; color:var(--text-sub); margin-top:2px;">가끔 알림 (가끔 중요한 루트만)</div>
+                    </div>
+                    <input type="radio" name="notif" ${currentNotif === 'personal' ? 'checked' : ''} />
+                  </div>
+
+                  <div class="radio-item ${currentNotif === 'none' ? 'selected' : ''}" onclick="setNotifOption('none')">
+                    <div>
+                      <div style="font-size:14px; font-weight:800;">🔕 무음</div>
+                      <div style="font-size:12px; color:var(--text-sub); margin-top:2px;">알림 받지 않음</div>
+                    </div>
+                    <input type="radio" name="notif" ${currentNotif === 'none' ? 'checked' : ''} />
+                  </div>
+                </div>
+
+                <div style="display:flex; justify-content:center; padding-top:4px;">
+                  <button style="background:none; border:none; color:#FF4242; font-size:13px; font-weight:800; cursor:pointer; padding:6px 12px;" onclick="unsubscribeFromSheet()">
+                    구독 취소
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        // C. Notification Inbox Sheet
+        if (state.ui.bottomSheet === 'notifInbox') {
+          html += `
+            <div class="sheet-backdrop" onclick="closeSheet()">
+              <div class="bottom-sheet" onclick="event.stopPropagation()">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div style="font-size:16px; font-weight:900;">알림 수신함</div>
+                  <div style="display:flex; gap:6px;">
+                    <button class="cta-btn" style="background:#EEE; color:var(--text); padding:4px 8px; font-size:11px;" onclick="markAllNotifsRead()">모두 읽음</button>
+                    <button class="icon-btn" onclick="closeSheet()">✕</button>
+                  </div>
+                </div>
+
+                <!-- Simulation Trigger Button -->
+                <div style="background:#F0F4FF; border-radius:12px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:12px; font-weight:700; color:var(--primary);">실시간 새 루트 알림 데모</span>
+                  <button class="cta-btn" style="padding:4px 10px; font-size:11px;" onclick="simulateNewRouteNotif()">🔔 알림 발송</button>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:8px; max-height:55vh; overflow-y:auto;">
+                  ${state.notifications.length === 0 ? `
+                    <div style="text-align:center; padding:30px; color:var(--text-sub); font-size:13px;">
+                      아직 알림이 없어요. 좋아하는 크리에이터를 구독해보세요!
+                    </div>
+                  ` : state.notifications.map(n => `
+                    <div style="display:flex; align-items:flex-start; gap:10px; padding:10px; border-radius:12px; background:${n.read ? '#FFF' : 'rgba(139,108,255,0.06)'}; border:1px solid ${n.read ? 'var(--border)' : 'var(--primary)'}; cursor:pointer;" onclick="clickNotifItem(${n.id}, '${n.routeId}')">
+                      <div class="avatar-wrapper" style="width:34px; height:34px; font-size:18px;">
+                        ${hashNameToAvatar(n.creator)}
+                      </div>
+                      <div style="flex:1;">
+                        <div style="font-size:13px; font-weight:700; line-height:1.4;">${esc(n.title)}</div>
+                        <div style="font-size:11px; color:#999; margin-top:2px;">${n.time}</div>
+                      </div>
+                      ${!n.read ? `<div style="width:8px; height:8px; border-radius:50%; background:var(--primary); margin-top:6px;"></div>` : ''}
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        // D. Upload Options Sheet (2x2 Grid)
+        if (state.ui.bottomSheet === 'upload') {
+          html += `
+            <div class="sheet-backdrop" onclick="closeSheet()">
+              <div class="bottom-sheet" onclick="event.stopPropagation()">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div style="font-size:16px; font-weight:900;">새 루트 만들기</div>
+                  <button class="icon-btn" onclick="closeSheet()">✕</button>
+                </div>
+
+                <div class="grid-2x2">
+                  <div class="grid-card" onclick="triggerAlbumUpload()">
+                    <span class="rec-badge">추천</span>
+                    <span style="font-size:28px;">📸</span>
+                    <div style="font-size:14px; font-weight:800;">사진으로 만들기</div>
+                    <div style="font-size:11px; color:var(--text-sub);">앨범 여러 장 선택</div>
+                  </div>
+
+                  <div class="grid-card" onclick="uploadMapLink()">
+                    <span style="font-size:28px;">🔗</span>
+                    <div style="font-size:14px; font-weight:800;">지도 링크</div>
+                    <div style="font-size:11px; color:var(--text-sub);">네이버/카카오 지도</div>
+                  </div>
+
+                  <div class="grid-card" onclick="uploadGPX()">
+                    <span style="font-size:28px;">🧭</span>
+                    <div style="font-size:14px; font-weight:800;">GPX 업로드</div>
+                    <div style="font-size:11px; color:var(--text-sub);">러닝/워킹 트랙</div>
+                  </div>
+
+                  <div class="grid-card" onclick="uploadGPSOnly()">
+                    <span style="font-size:28px;">📍</span>
+                    <div style="font-size:14px; font-weight:800;">GPS 위치만</div>
+                    <div style="font-size:11px; color:var(--text-sub);">현재 위치 즉석 등록</div>
+                  </div>
+                </div>
+
+                <div style="border-top:1px solid var(--border); padding-top:12px; display:flex; justify-content:space-between; align-items:center;">
+                  <div style="font-size:12px; color:var(--text-sub);">실시간 카메라로 직접 찍기</div>
+                  <button class="cta-btn" style="background:#333;" onclick="openLiveCamera()">📷 즉석 촬영</button>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        // E. Finish Certification Modal
+        if (state.ui.bottomSheet === 'finishCertification') {
+          html += `
+            <div class="sheet-backdrop" onclick="closeSheet()">
+              <div class="bottom-sheet" onclick="event.stopPropagation()">
+                <div style="font-size:18px; font-weight:900; text-align:center;">🎉 루트 완주를 축하합니다!</div>
+                <div style="font-size:13px; text-align:center; color:var(--text-sub);">별점과 인증샷으로 완주 스탬프를 받으세요</div>
+
+                <!-- Star Rating -->
+                <div style="display:flex; justify-content:center; gap:8px; font-size:32px; cursor:pointer;">
+                  ${[1, 2, 3, 4, 5].map(star => `
+                    <span onclick="setReviewStars(${star})">${star <= state.ui.review.stars ? '⭐' : '☆'}</span>
+                  `).join('')}
+                </div>
+
+                <!-- Review input -->
+                <textarea id="review-input" placeholder="이 루트의 솔직한 한줄 후기를 남겨보세요! (+5⭐)" style="width:100%; height:70px; border-radius:12px; border:1px solid var(--border); padding:10px; font-size:13px; resize:none;" oninput="state.ui.review.text=this.value">${esc(state.ui.review.text)}</textarea>
+
+                <!-- Review photos -->
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <button class="cta-btn" style="background:#F0F0EE; color:var(--text); font-size:12px; padding:8px 12px;" onclick="addReviewPhoto()">📷 인증샷 추가 (+10⭐)</button>
+                  ${(state.ui.review.images || []).map(img => `<img src="${img}" style="width:40px; height:40px; border-radius:8px; object-fit:cover;" />`).join('')}
+                </div>
+
+                <!-- Actions -->
+                <div style="display:flex; gap:10px;">
+                  <button class="cta-btn" style="background:#EEE; color:var(--text); flex:1;" onclick="completeRouteCertification(true)">
+                    건너뛰기
+                  </button>
+                  <button class="cta-btn" style="flex:2;" onclick="completeRouteCertification(false)">
+                    인증 완료하고 별사탕 받기 ⭐
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        // F. Finish Summary Modal
+        if (state.ui.bottomSheet === 'finishSummary') {
+          const lc = state.ui.lastCompletion || { distance: '-', time: '-', earned: 0 };
+          html += `
+            <div class="sheet-backdrop">
+              <div class="bottom-sheet" style="text-align:center; padding:30px 20px;">
+                <div class="avatar-wrapper" style="width:56px; height:56px; font-size:30px; margin:0 auto;">
+                  <span>${AVATAR_MAP[state.custom.equipped.avatar] || '🐻'}</span>
+                  <span class="sticker-badge" style="font-size:16px;">${STICKER_MAP[state.custom.equipped.sticker] || '❤️'}</span>
+                </div>
+                <div style="font-size:48px; animation:bounce 1s infinite;">⭐</div>
+                <div style="font-size:20px; font-weight:900; margin-top:10px;">완주 인증 완료!</div>
+                <div style="font-size:13px; color:var(--text-sub); margin-top:4px;">기록이 내 프로필에 보관되었습니다.</div>
+
+                <div style="display:flex; justify-content:space-around; background:#F8F8F6; border-radius:16px; padding:16px; margin:18px 0;">
+                  <div>
+                    <div style="font-size:11px; color:#999;">총 거리</div>
+                    <div style="font-size:16px; font-weight:800;">${lc.distance}</div>
+                  </div>
+                  <div>
+                    <div style="font-size:11px; color:#999;">소요 시간</div>
+                    <div style="font-size:16px; font-weight:800;">${lc.time}</div>
+                  </div>
+                  <div>
+                    <div style="font-size:11px; color:#999;">획득 별사탕</div>
+                    <div style="font-size:16px; font-weight:800; color:var(--primary); animation:bounce 0.6s ease infinite alternate;">+${lc.earned}⭐</div>
+                  </div>
+                </div>
+
+                <div style="display:flex; gap:10px;">
+                  <button class="cta-btn" style="background:#EEE; color:var(--text); flex:1;" onclick="closeFollowRoute(); closeSheet();">
+                    탐색으로
+                  </button>
+                  <button class="cta-btn" style="flex:1;" onclick="closeFollowRoute(); openShareSheet('${state.ui.followRouteId}');">
+                    ↗ 자랑하기
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        // G. Share Sheet
+        if (state.ui.bottomSheet === 'share') {
+          const sRoute = state.routes.find(r => r.id === state.ui.shareRouteId) || state.routes[0];
+          html += `
+            <div class="sheet-backdrop" onclick="closeSheet()">
+              <div class="bottom-sheet" onclick="event.stopPropagation()">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:24px;">${AVATAR_MAP[state.custom.equipped.avatar] || '🐻'}</span>
+                    <div>
+                      <div style="font-size:14px; font-weight:800;">${esc(state.user.name)}님이 공유했어요</div>
+                      <div style="font-size:12px; color:var(--text-sub);">${sRoute ? esc(sRoute.title) : ''}</div>
+                    </div>
+                  </div>
+                  <button class="icon-btn" onclick="closeSheet()">✕</button>
+                </div>
+
+                <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin:10px 0;">
+                  <div style="display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer;" onclick="shareChannel('카카오톡')">
+                    <div style="width:50px; height:50px; border-radius:16px; background:#FEE500; display:flex; align-items:center; justify-content:center; font-size:22px;">💬</div>
+                    <span style="font-size:11px; font-weight:700;">카카오톡</span>
+                  </div>
+                  <div style="display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer;" onclick="shareChannel('링크복사')">
+                    <div style="width:50px; height:50px; border-radius:16px; background:#F0F0EE; display:flex; align-items:center; justify-content:center; font-size:22px;">🔗</div>
+                    <span style="font-size:11px; font-weight:700;">링크복사</span>
+                  </div>
+                  <div style="display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer;" onclick="shareChannel('인스타그램')">
+                    <div style="width:50px; height:50px; border-radius:16px; background:#E1306C; color:white; display:flex; align-items:center; justify-content:center; font-size:22px;">📷</div>
+                    <span style="font-size:11px; font-weight:700;">인스타</span>
+                  </div>
+                  <div style="display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer;" onclick="shareChannel('문자')">
+                    <div style="width:50px; height:50px; border-radius:16px; background:#4CAF50; color:white; display:flex; align-items:center; justify-content:center; font-size:22px;">✉️</div>
+                    <span style="font-size:11px; font-weight:700;">문자</span>
+                  </div>
+                </div>
+                ${sRoute && sRoute.isCollaborative ? `
+                  <button class="btn-secondary" style="width:100%; padding:10px;" onclick="shareCollabLink('${sRoute.id}')">👥 함께가기 링크</button>
+                ` : ''}
+                <div style="font-size:11px; color:#999; text-align:center;">공유할 때마다 별사탕 +8개가 적립됩니다!</div>
+              </div>
+            </div>
+          `;
+        }
+
+        // H. Custom Shop Sheet
+        if (state.ui.bottomSheet === 'customShop') {
+          const shopCosts = { avatar: 30, sticker: 25, theme: 40 };
+          const renderShopItem = (category, key, displayHtml) => {
+            const owned = state.custom.owned[category].includes(key);
+            const equipped = state.custom.equipped[category] === key;
+            const mission = getMissionForItem(category, key);
+            const cost = shopCosts[category];
+            let actionHtml;
+            if (equipped) {
+              actionHtml = `<span style="font-size:10px; font-weight:800; color:var(--primary);">${category === 'theme' ? '적용중' : '장착중'}</span>`;
+            } else if (owned) {
+              actionHtml = `<button class="cta-btn" style="padding:2px 6px; font-size:10px;" onclick="equipItem('${category}', '${key}')">${category === 'theme' ? '적용' : '장착'}</button>`;
+            } else if (mission && mission.current() >= mission.target) {
+              actionHtml = `<button class="cta-btn" style="padding:2px 6px; font-size:10px; background:var(--mint); color:#FFF;" onclick="claimMissionItem('${category}', '${key}')">🎁 받기</button>`;
+            } else {
+              actionHtml = `
+                <div style="display:flex; gap:4px;">
+                  <button class="cta-btn" style="padding:2px 6px; font-size:10px; background:#FFC61C; color:#111;" onclick="buyItem('${category}', '${key}', ${cost})">⭐${cost}</button>
+                  <button class="step-mini-btn" style="padding:2px 6px;" onclick="giftItem('${category}', '${key}', ${cost})">🎁</button>
+                </div>
+              `;
+            }
+            const missionHint = (!owned && mission && mission.current() < mission.target)
+              ? `<div style="font-size:9px; color:#999; text-align:center; max-width:64px; line-height:1.3;">🎁 ${mission.label} (${mission.current()}/${mission.target})</div>`
+              : '';
+            return `
+              <div style="min-width:65px; display:flex; flex-direction:column; align-items:center; gap:4px; padding:8px; border-radius:12px; border:1.5px solid ${equipped ? 'var(--primary)' : 'var(--border)'}; background:${equipped ? 'rgba(139,108,255,0.05)' : '#FFF'};">
+                ${displayHtml}
+                ${actionHtml}
+                ${missionHint}
+              </div>
+            `;
+          };
+
+          html += `
+            <div class="sheet-backdrop" onclick="closeSheet()">
+              <div class="bottom-sheet" onclick="event.stopPropagation()">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div style="font-size:16px; font-weight:900;">🎨 꾸미기 상점 (보유: ⭐ ${state.user.points})</div>
+                  <button class="icon-btn" onclick="closeSheet()">✕</button>
+                </div>
+
+                <!-- Avatars -->
+                <div>
+                  <div style="font-size:13px; font-weight:800; margin-bottom:8px;">아바타</div>
+                  <div style="display:flex; gap:10px; overflow-x:auto; padding-bottom:4px;">
+                    ${Object.keys(AVATAR_MAP).map(k => renderShopItem('avatar', k, `<span style="font-size:28px;">${AVATAR_MAP[k]}</span>`)).join('')}
+                  </div>
+                </div>
+
+                <!-- Stickers -->
+                <div>
+                  <div style="font-size:13px; font-weight:800; margin-bottom:8px;">스티커</div>
+                  <div style="display:flex; gap:10px; overflow-x:auto; padding-bottom:4px;">
+                    ${Object.keys(STICKER_MAP).map(k => renderShopItem('sticker', k, `<span style="font-size:28px;">${STICKER_MAP[k]}</span>`)).join('')}
+                  </div>
+                </div>
+
+                <!-- Themes -->
+                <div>
+                  <div style="font-size:13px; font-weight:800; margin-bottom:8px;">테마 컬러</div>
+                  <div style="display:flex; gap:10px; overflow-x:auto; padding-bottom:4px;">
+                    ${Object.keys(THEME_MAP).map(k => renderShopItem('theme', k, `<div style="width:28px; height:28px; border-radius:50%; background:${THEME_MAP[k]};"></div>`)).join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        // I. Charge Modal
+        if (state.ui.bottomSheet === 'charge') {
+          html += `
+            <div class="sheet-backdrop" onclick="closeSheet()">
+              <div class="bottom-sheet" onclick="event.stopPropagation()">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div style="font-size:16px; font-weight:900;">⭐ 별사탕 충전소</div>
+                  <button class="icon-btn" onclick="closeSheet()">✕</button>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                  ${[
+                    { amount: 100, won: '1,000원', label: '⭐ 100개', tag: '기본 팩', tagColor: '#999' },
+                    { amount: 360, won: '3,000원', label: '⭐ 330개 + 30개 보너스', tag: '인기 팩', tagColor: 'var(--primary)' },
+                    { amount: 700, won: '5,000원', label: '⭐ 600개 + 100개 보너스', tag: '추천 팩', tagColor: '#E68A00' },
+                    { amount: 1600, won: '10,000원', label: '⭐ 1,300개 + 300개 보너스', tag: '대용량 팩', tagColor: '#FF4242' }
+                  ].map(p => {
+                    const selected = state.ui.charge.pack && state.ui.charge.pack.amount === p.amount;
+                    return `
+                      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border:1.5px solid ${selected ? 'var(--primary)' : 'var(--border)'}; border-radius:14px; background:${selected ? 'rgba(139,108,255,0.05)' : '#FFF'}; cursor:pointer;" onclick="selectChargePack(${p.amount}, '${p.won}')">
+                        <div>
+                          <div style="font-weight:800; font-size:14px;">${p.label}</div>
+                          <div style="font-size:11px; color:${p.tagColor}; font-weight:700;">${p.tag}</div>
+                        </div>
+                        <div style="font-size:13px; font-weight:800; color:${selected ? 'var(--primary)' : 'var(--text)'};">${selected ? '✓ 선택됨' : p.won}</div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+
+                <div>
+                  <div style="font-size:12px; font-weight:800; margin:4px 0 8px;">결제수단</div>
+                  <div style="display:flex; gap:8px;">
+                    ${['카드', '카카오페이', '휴대폰'].map(m => `
+                      <div class="filter-chip ${state.ui.charge.method === m ? 'active' : ''}" style="flex:1; text-align:center;" onclick="selectChargeMethod('${m}')">${m}</div>
+                    `).join('')}
+                  </div>
+                </div>
+
+                <button class="cta-btn" style="padding:12px; font-size:14px; opacity:${(state.ui.charge.pack && state.ui.charge.method) ? '1' : '0.5'};" ${(state.ui.charge.pack && state.ui.charge.method) ? '' : 'disabled'} onclick="confirmCharge()">결제하기</button>
+              </div>
+            </div>
+          `;
+        }
+
+        // J. Collaborative Planning Sheet (함께가기 설정)
+        if (state.ui.collabSheet) {
+          const cRoute = state.routes.find(r => r.id === state.ui.collabSheet.routeId);
+          const cParticipants = (cRoute && cRoute.participants && cRoute.participants.length)
+            ? cRoute.participants
+            : [makeParticipant(state.user.name, true)];
+          html += `
+            <div class="sheet-backdrop" onclick="closeSheet()">
+              <div class="bottom-sheet" onclick="event.stopPropagation()">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div style="font-size:16px; font-weight:900;">함께 계획하기</div>
+                  <button class="icon-btn" onclick="closeSheet()">✕</button>
+                </div>
+
+                <div>
+                  <div style="font-size:13px; font-weight:800; margin-bottom:8px;">참여자 (${cParticipants.length})</div>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    ${cParticipants.map(p => `
+                      <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; background:#F9F9F8; border-radius:12px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                          <div style="position:relative;">
+                            <div class="avatar-wrapper" style="width:32px; height:32px; font-size:16px;">${p.avatar || hashNameToAvatar(p.name)}</div>
+                            <div style="position:absolute; bottom:0; right:0; width:9px; height:9px; border-radius:50%; background:${p.isOnline ? 'var(--mint)' : '#CCC'}; border:2px solid #FFF;"></div>
+                          </div>
+                          <span style="font-size:13px; font-weight:700;">${esc(p.name)}${p.name === state.user.name ? ' (나)' : ''}</span>
+                        </div>
+                        ${p.name !== state.user.name ? `
+                          <div style="display:flex; align-items:center; gap:6px;">
+                            <span class="step-mini-btn" style="cursor:pointer;" data-route-id="${esc(cRoute.id)}" data-name="${esc(p.name)}" onclick="toggleParticipantRole(this.dataset.routeId, this.dataset.name)">${p.role === 'viewer' ? '👀 뷰어' : '✏️ 편집자'}</span>
+                            <button class="icon-btn" style="width:26px; height:26px; font-size:11px;" data-route-id="${esc(cRoute.id)}" data-name="${esc(p.name)}" onclick="removeParticipant(this.dataset.routeId, this.dataset.name)">✕</button>
+                          </div>
+                        ` : ''}
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+
+                <div>
+                  <div style="font-size:13px; font-weight:800; margin-bottom:8px;">친구 초대</div>
+                  <div style="display:flex; gap:8px;">
+                    <input type="text" id="collab-invite-name" placeholder="친구 이름 입력" style="flex:1; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
+                    <button class="btn-secondary" onclick="generateCollabInvite('${cRoute.id}')">초대 링크 생성</button>
+                  </div>
+                </div>
+
+                <button class="cta-btn" style="padding:12px; font-size:14px;" onclick="startCollab('${cRoute.id}')">함께가기 시작</button>
+
+                <div style="font-size:11px; color:#999; text-align:center;">함께가기에서는 장소를 함께 추가/수정하고, 각자 GPS 인증을 할 수 있어요</div>
+              </div>
+            </div>
+          `;
+        }
+
+        // K. Collaborative Step Edit/Add Sheet
+        if (state.ui.collabEditSheet) {
+          const eSheet = state.ui.collabEditSheet;
+          const eRoute = state.routes.find(r => r.id === eSheet.routeId);
+          const eStep = eSheet.mode === 'edit' && eRoute ? eRoute.steps[eSheet.stepIndex] : null;
+          html += `
+            <div class="sheet-backdrop" onclick="closeSheet()">
+              <div class="bottom-sheet" onclick="event.stopPropagation()">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div style="font-size:16px; font-weight:900;">${eSheet.mode === 'add' ? '장소 추가' : '장소 수정'}</div>
+                  <button class="icon-btn" onclick="closeSheet()">✕</button>
+                </div>
+                <input type="text" id="step-form-name" placeholder="장소명" value="${eStep ? esc(eStep.name) : ''}" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
+                <input type="text" id="step-form-address" placeholder="주소" value="${eStep ? esc(eStep.address) : ''}" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
+                <textarea id="step-form-memo" placeholder="메모" style="width:100%; height:60px; border-radius:12px; border:1px solid var(--border); padding:10px; font-size:13px; resize:none;">${eStep ? esc(eStep.memo) : ''}</textarea>
+                <button class="cta-btn" style="padding:12px; font-size:14px;" onclick="saveStepForm()">저장</button>
+              </div>
+            </div>
+          `;
+        }
+
+        root.innerHTML = html;
+
+        // 4b. Reattach live camera stream (innerHTML replacement drops the <video> element's srcObject)
+        if (state.ui.cameraActive && window._mediaStream) {
+          const cameraVideo = document.getElementById('camera-video');
+          if (cameraVideo && cameraVideo.srcObject !== window._mediaStream) {
+            cameraVideo.srcObject = window._mediaStream;
+            cameraVideo.play().catch(() => {});
+          }
+        }
+
+        // 4. Restore active input focus and cursor position smoothly
+        if (activeId) {
+          const restoredEl = document.getElementById(activeId);
+          if (restoredEl) {
+            restoredEl.focus();
+            if (selStart !== null && selEnd !== null && typeof restoredEl.setSelectionRange === 'function') {
+              try { restoredEl.setSelectionRange(selStart, selEnd); } catch (e) {}
+            }
+          }
+        }
+      }
+
+      // Esc closes whatever sheet/overlay is currently on top.
+      document.addEventListener('keydown', e => {
+        if (e.key !== 'Escape') return;
+        if (state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.cameraActive) {
+          closeSheet();
+        } else if (state.ui.followRouteId) {
+          closeFollowRoute();
+        }
+      });
+
+      // Initial Render
+      window.addEventListener('DOMContentLoaded', () => {
+        render();
+        // Optional demo notification after 5 seconds to showcase YouTube-style real-time simulation
+        setTimeout(() => {
+          if (state.notifications.length < 4) {
+            simulateNewRouteNotif();
+          }
+        }, 5000);
+      });
+    </script>
+  </body>
+</html>
