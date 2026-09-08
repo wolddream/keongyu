@@ -275,6 +275,7 @@
     <!-- Hidden global inputs required by spec -->
     <input type="file" id="global-file-input" style="display:none;" multiple accept="image/*" />
     <input type="file" id="fallback-camera-input" style="display:none;" capture="environment" accept="image/*" />
+    <input type="file" id="gpx-file-input" style="display:none;" accept=".gpx,application/gpx+xml" />
 
     <!-- Bottom Toast -->
     <div id="toast" class="toast-box"></div>
@@ -1370,37 +1371,89 @@
       };
 
       // Upload method C: GPX
+      function haversineMeters(a, b) {
+        const R = 6371000;
+        const dLat = (b.lat - a.lat) * Math.PI / 180;
+        const dLng = (b.lng - a.lng) * Math.PI / 180;
+        const lat1 = a.lat * Math.PI / 180;
+        const lat2 = b.lat * Math.PI / 180;
+        const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+        return 2 * R * Math.asin(Math.sqrt(h));
+      }
+
+      function parseGPXToRoute(xmlText, fileName) {
+        const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+        if (doc.querySelector('parsererror')) throw new Error('GPX 파일 형식이 올바르지 않습니다.');
+
+        let points = Array.from(doc.querySelectorAll('trkpt, rtept'));
+        if (!points.length) points = Array.from(doc.querySelectorAll('wpt'));
+
+        const coords = points
+          .map(p => ({ lat: parseFloat(p.getAttribute('lat')), lng: parseFloat(p.getAttribute('lon')) }))
+          .filter(c => Number.isFinite(c.lat) && Number.isFinite(c.lng));
+
+        if (coords.length < 2) throw new Error('GPX 파일에서 유효한 트랙 포인트를 찾을 수 없습니다.');
+
+        let distanceM = 0;
+        for (let i = 1; i < coords.length; i++) distanceM += haversineMeters(coords[i - 1], coords[i]);
+        const distanceKm = distanceM / 1000;
+        const estMinutes = Math.max(5, Math.round((distanceKm / 4.5) * 60));
+
+        const start = coords[0];
+        const mid = coords[Math.floor(coords.length / 2)];
+        const end = coords[coords.length - 1];
+        const baseName = (fileName || 'GPX 트랙').replace(/\.gpx$/i, '');
+
+        return {
+          id: 'r_' + Date.now(),
+          title: `${baseName} 트래킹 기록`,
+          purpose: '힐링·산책',
+          tags: ['#GPX트랙', '#워킹', '#실측루트'],
+          distance: `${distanceKm.toFixed(1)}km`,
+          time: `${estMinutes}분`,
+          budget: '0원',
+          likes: 0,
+          creator: state.user.name,
+          isPublic: true,
+          isMine: true,
+          image: null,
+          steps: [
+            { type: 'START', name: '트랙 시작점', address: `좌표: ${start.lat.toFixed(5)}, ${start.lng.toFixed(5)}`, cost: '0원', memo: 'GPX 파일에서 추출된 좌표' },
+            { type: '경유', name: '트랙 경유점', address: `좌표: ${mid.lat.toFixed(5)}, ${mid.lng.toFixed(5)}`, cost: '0원', memo: '트랙 중간 지점' },
+            { type: '도착', name: '트랙 도착점', address: `좌표: ${end.lat.toFixed(5)}, ${end.lng.toFixed(5)}`, cost: '0원', memo: 'GPX 파일에서 추출된 좌표' }
+          ],
+          comments: []
+        };
+      }
+
       window.uploadGPX = function() {
-        showToast('GPX 트랙 파일에서 이동 경로를 계산 중입니다...');
-        setTimeout(() => {
-          const newRoute = {
-            id: 'r_' + Date.now(),
-            title: 'GPX 트래킹 기록 산책로',
-            purpose: '힐링·산책',
-            tags: ['#GPX트랙', '#워킹', '#풍경'],
-            distance: '3.2km',
-            time: '55분',
-            budget: '0원',
-            likes: 0,
-            creator: state.user.name,
-            isPublic: true,
-            isMine: true,
-            image: null,
-            steps: [
-              { type: 'START', name: '트랙 시작점', address: '서울 종로구 옥인동 47', cost: '0원', memo: '출발' },
-              { type: '경유', name: '인왕산 둘레길 쉼터', address: '서울 종로구 무악동 산2-1', cost: '0원', memo: '전망 포인트' },
-              { type: '도착', name: '수성동 계곡 광장', address: '서울 종로구 옥인동 185', cost: '0원', memo: '도착 휴식' }
-            ],
-            comments: []
+        const input = document.getElementById('gpx-file-input');
+        input.onchange = function(e) {
+          const file = e.target.files && e.target.files[0];
+          input.value = '';
+          if (!file) return;
+          showToast('GPX 트랙 파일에서 이동 경로를 계산 중입니다...');
+          const reader = new FileReader();
+          reader.onload = function(evt) {
+            try {
+              const newRoute = parseGPXToRoute(evt.target.result, file.name);
+              state.routes.unshift(withCollabDefaults(newRoute));
+              state.user.points += 15;
+              state.ui.bottomSheet = null;
+              state.ui.tab = 'myRoutes';
+              saveState();
+              showToast('GPX 루트가 성공적으로 등록되었습니다! ⭐+15 적립');
+              render();
+            } catch (err) {
+              showToast(err.message || 'GPX 파일을 분석할 수 없습니다.');
+            }
           };
-          state.routes.unshift(withCollabDefaults(newRoute));
-          state.user.points += 15;
-          state.ui.bottomSheet = null;
-          state.ui.tab = 'myRoutes';
-          saveState();
-          showToast('GPX 루트가 성공적으로 등록되었습니다! ⭐+15 적립');
-          render();
-        }, 1200);
+          reader.onerror = function() {
+            showToast('GPX 파일을 읽는 중 오류가 발생했습니다.');
+          };
+          reader.readAsText(file);
+        };
+        input.click();
       };
 
       // Upload method D: GPS Only
