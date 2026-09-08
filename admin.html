@@ -134,11 +134,28 @@
       // 0. Constants
       // ==========================================
       const STORAGE_KEY = 'keongyu_v1'; // 메인 앱(index.html)과 동일한 키
-      // 데모 관리자 토큰. 실제 배포에서는 여기 하드코딩된 값 대신 서버(Workers) 검증으로 교체해야 합니다.
-      // TODO(보안): admin.keongyu.app 서브도메인 + Cloudflare Zero Trust Access로 앱단 인증 이전에 IP/세션 게이트를 걸고,
-      //   각 fetch('/api/admin/*') 요청은 Workers에서 env.ADMIN_TOKEN(시크릿)과 X-ADMIN-TOKEN 헤더를 비교해 검증.
-      //   -> https://dash.cloudflare.com/ -> Zero Trust -> Access -> Applications -> admin.keongyu.app 보호 설정
-      const ADMIN_TOKEN = '0000';
+      // 관리자 인증: keongyu-api Worker의 GET /api/admin/verify가 X-ADMIN-TOKEN 헤더를 실제
+      // 시크릿(env.ADMIN_TOKEN, wrangler secret put으로 등록됨)과 서버에서 비교합니다.
+      // 이전에는 여기 클라이언트 JS에 토큰 값을 하드코딩해 페이지 소스만 봐도 뚫리는 가짜 보안이었는데,
+      // 이제는 유효한 토큰 문자열 자체가 브라우저에 전혀 내려오지 않습니다 - 로컬에는 "검증에 성공했던
+      // 값"만 재입력 생략용으로 캐시됩니다.
+      const ADMIN_API_BASE = 'https://keongyu-api.wolddream.workers.dev';
+
+      // 서버에 X-ADMIN-TOKEN으로 후보 토큰을 보내 실제로 유효한지 확인합니다.
+      async function verifyAdminToken(candidate) {
+        if (!candidate) return false;
+        try {
+          const res = await fetch(`${ADMIN_API_BASE}/api/admin/verify`, {
+            headers: { 'X-ADMIN-TOKEN': candidate }
+          });
+          return res.ok;
+        } catch (e) {
+          return false; // 네트워크 오류 시 접근 거부 (fail-closed)
+        }
+      }
+
+      // 각 관리 액션(TODO fetch)이 쓸 X-ADMIN-TOKEN 값. 검증 성공 시 checkAdminAuth()가 채웁니다.
+      let adminToken = '';
 
       const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
       function esc(str) {
@@ -151,7 +168,7 @@
       // ==========================================
       // TODO(D1 연동): 아래 loadAppState()는 "이 브라우저의" localStorage만 읽습니다.
       // 실제 다중 사용자 데이터를 보려면 D1 기반 API로 교체:
-      //   const res = await fetch('/api/admin/routes', { headers: { 'X-ADMIN-TOKEN': ADMIN_TOKEN } });
+      //   const res = await fetch(`${ADMIN_API_BASE}/api/admin/routes`, { headers: { 'X-ADMIN-TOKEN': adminToken } });
       //   const { routes } = await res.json();
       // 아래 D1 스키마도 함께 참고 (schema.sql에 이미 반영됨 - wrangler d1 execute로 keongyu-db에 생성 완료):
       //
@@ -450,9 +467,9 @@
             </div>
             <div class="panel">
               <h2 style="font-size:14px; font-weight:900; margin-bottom:10px;">🔐 관리자 인증</h2>
-              <input type="password" id="admin-pw-input" placeholder="현재: 0000 (데모) - Workers ENV ADMIN_TOKEN으로 교체 필요" />
+              <input type="password" id="admin-pw-input" placeholder="새 관리자 토큰 (Workers ADMIN_TOKEN과 일치해야 저장됨)" />
               <button class="btn btn-primary" onclick="saveAdminPassword()">저장</button>
-              <div class="hint">⚠️ 데모용 로컬 검증입니다. 여기서 값을 바꿔도 실제 접근 제어는 바뀌지 않습니다 — 실서비스에서는 Workers 환경변수 ADMIN_TOKEN을 서버에서 비교해야 합니다.</div>
+              <div class="hint">서버(keongyu-api)의 실제 ADMIN_TOKEN 시크릿과 서버측에서 대조합니다. 토큰 값 자체를 바꾸려면 여기가 아니라 <code>wrangler secret put ADMIN_TOKEN</code>으로 Workers 시크릿을 갱신해야 합니다 — 이 입력창은 새 토큰이 유효한지 확인하고 이 브라우저의 로컬 캐시를 갱신할 뿐입니다.</div>
             </div>
             <div class="panel">
               <h2 style="font-size:14px; font-weight:900; margin-bottom:10px;">📢 공지사항</h2>
@@ -473,7 +490,7 @@
         if (!r) return;
         r.isPublic = !r.isPublic;
         persistAppState();
-        // TODO: fetch(`/api/admin/routes/${routeId}`, {method:'PATCH', headers:{'X-ADMIN-TOKEN': ADMIN_TOKEN}, body: JSON.stringify({is_public: r.isPublic})})
+        // TODO: fetch(`${ADMIN_API_BASE}/api/admin/routes/${routeId}`, {method:'PATCH', headers:{'X-ADMIN-TOKEN': adminToken}, body: JSON.stringify({is_public: r.isPublic})})
         renderTab(currentTab);
       };
 
@@ -482,7 +499,7 @@
         if (!confirm('이 루트를 삭제할까요? 되돌릴 수 없습니다.')) return;
         appState.routes = appState.routes.filter(x => x.id !== routeId);
         persistAppState();
-        // TODO: fetch(`/api/admin/routes/${routeId}`, {method:'DELETE', headers:{'X-ADMIN-TOKEN': ADMIN_TOKEN}})
+        // TODO: fetch(`${ADMIN_API_BASE}/api/admin/routes/${routeId}`, {method:'DELETE', headers:{'X-ADMIN-TOKEN': adminToken}})
         renderTab(currentTab);
       };
 
@@ -506,7 +523,7 @@
       window.resolveReport = function(reportId) {
         reports = reports.filter(r => r.id !== reportId);
         // TODO: D1 reports.status='resolved' + admin_logs insert
-        // fetch(`/api/admin/reports/${reportId}`, {method:'PATCH', headers:{'X-ADMIN-TOKEN': ADMIN_TOKEN}, body: JSON.stringify({status:'resolved'})})
+        // fetch(`${ADMIN_API_BASE}/api/admin/reports/${reportId}`, {method:'PATCH', headers:{'X-ADMIN-TOKEN': adminToken}, body: JSON.stringify({status:'resolved'})})
         renderTab('reports');
       };
 
@@ -521,14 +538,14 @@
         } else {
           alert(`⭐ ${amount}개를 지급했습니다. (데모 유저는 실제로 반영되지 않습니다)`);
         }
-        // TODO: fetch(`/api/admin/users/${userId}/points`, {method:'POST', headers:{'X-ADMIN-TOKEN': ADMIN_TOKEN}, body: JSON.stringify({amount})})
+        // TODO: fetch(`${ADMIN_API_BASE}/api/admin/users/${userId}/points`, {method:'POST', headers:{'X-ADMIN-TOKEN': adminToken}, body: JSON.stringify({amount})})
         renderTab('users');
       };
 
       window.suspendUser = function() {
         if (!confirm('이 사용자를 정지할까요?')) return;
         alert('정지 처리는 데모입니다. 실제로는 D1 users.status 업데이트가 필요합니다.');
-        // TODO: fetch(`/api/admin/users/${userId}/suspend`, {method:'POST', headers:{'X-ADMIN-TOKEN': ADMIN_TOKEN}})
+        // TODO: fetch(`${ADMIN_API_BASE}/api/admin/users/${userId}/suspend`, {method:'POST', headers:{'X-ADMIN-TOKEN': adminToken}})
       };
 
       window.openPortOne = function() {
@@ -542,12 +559,18 @@
         alert(json.length > 1000 ? json.slice(0, 1000) + '\n... (1000자 초과, 생략됨)' : json);
       };
 
-      window.saveAdminPassword = function() {
+      window.saveAdminPassword = async function() {
         const input = document.getElementById('admin-pw-input');
         const val = (input && input.value || '').trim();
-        if (!val) { alert('비밀번호를 입력해주세요.'); return; }
+        if (!val) { alert('토큰을 입력해주세요.'); return; }
+        const valid = await verifyAdminToken(val);
+        if (!valid) {
+          alert('서버에 등록된 ADMIN_TOKEN과 일치하지 않아요. 저장하지 않았습니다.');
+          return;
+        }
+        adminToken = val;
         try { localStorage.setItem('admin_token', val); } catch (e) {}
-        alert('저장했습니다. (데모 - 실제 인증은 서버측 ADMIN_TOKEN 검증으로 교체 필요)');
+        alert('확인 완료 — 이 브라우저에 로컬 캐시로 저장했습니다.');
         if (input) input.value = '';
       };
 
@@ -560,12 +583,18 @@
       // ==========================================
       // 4. 인증 게이트 + 초기화
       // ==========================================
-      function checkAdminAuth() {
+      // 로컬에 캐시된 토큰이 있으면 먼저 그걸로 서버 검증(재입력 생략), 없거나 만료/변경됐으면
+      // prompt()로 다시 물어봅니다. 어느 경우든 최종 판단은 항상 서버(/api/admin/verify)가 내립니다.
+      async function checkAdminAuth() {
         let saved = null;
         try { saved = localStorage.getItem('admin_token'); } catch (e) {}
-        if (saved === ADMIN_TOKEN) return true;
+        if (saved && (await verifyAdminToken(saved))) {
+          adminToken = saved;
+          return true;
+        }
         const input = prompt('관리자 토큰을 입력하세요:');
-        if (input === ADMIN_TOKEN) {
+        if (input && (await verifyAdminToken(input))) {
+          adminToken = input;
           try { localStorage.setItem('admin_token', input); } catch (e) {}
           return true;
         }
@@ -580,8 +609,9 @@
         renderTab('dashboard');
       }
 
-      window.addEventListener('DOMContentLoaded', () => {
-        if (!checkAdminAuth()) {
+      window.addEventListener('DOMContentLoaded', async () => {
+        const ok = await checkAdminAuth();
+        if (!ok) {
           document.getElementById('admin-shell').innerHTML =
             '<div style="padding:60px; text-align:center; width:100%;"><div style="font-size:32px;">🔒</div><div style="font-size:15px; font-weight:800; margin-top:10px;">접근이 거부되었습니다.</div></div>';
           return;

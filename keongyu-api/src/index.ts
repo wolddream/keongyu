@@ -7,9 +7,10 @@
  *   POST /api/collab/join            -> add a participant to a route
  *   POST /api/chat                   -> insert a chat message (Turnstile-protected; DO broadcast: 5️⃣ 단계에서 연결)
  *   GET  /oauth/kakao/callback       -> Kakao OAuth redirect target (6️⃣ 인증 & 카카오)
+ *   GET  /api/admin/verify           -> checks X-ADMIN-TOKEN header against env.ADMIN_TOKEN (admin.html auth gate)
  *
  * Bindings (wrangler.jsonc): DB (D1), IMAGES (R2)
- * Secrets (wrangler secret put): TURNSTILE_SECRET_KEY, KAKAO_REST_API_KEY, (optional) KAKAO_CLIENT_SECRET
+ * Secrets (wrangler secret put): TURNSTILE_SECRET_KEY, KAKAO_REST_API_KEY, (optional) KAKAO_CLIENT_SECRET, ADMIN_TOKEN
  */
 
 declare global {
@@ -17,7 +18,32 @@ declare global {
 		TURNSTILE_SECRET_KEY: string;
 		KAKAO_REST_API_KEY: string;
 		KAKAO_CLIENT_SECRET?: string;
+		ADMIN_TOKEN: string;
 	}
+}
+
+// Constant-time string compare - avoids leaking ADMIN_TOKEN length/prefix via response timing.
+function timingSafeEqual(a: string, b: string): boolean {
+	const enc = new TextEncoder();
+	const aBytes = enc.encode(a);
+	const bBytes = enc.encode(b);
+	if (aBytes.length !== bBytes.length) {
+		// Still walk a same-length buffer so early-return doesn't itself leak length via timing.
+		let dummy = 0;
+		for (let i = 0; i < aBytes.length; i++) dummy |= aBytes[i] ^ (bBytes[i % (bBytes.length || 1)] || 0);
+		return false;
+	}
+	let diff = 0;
+	for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i];
+	return diff === 0;
+}
+
+async function handleAdminVerify(request: Request, env: Env): Promise<Response> {
+	const token = request.headers.get("X-ADMIN-TOKEN") || "";
+	if (!token || !env.ADMIN_TOKEN || !timingSafeEqual(token, env.ADMIN_TOKEN)) {
+		return json({ ok: false }, 401);
+	}
+	return json({ ok: true });
 }
 
 function json(data: unknown, status = 200): Response {
@@ -30,7 +56,7 @@ function json(data: unknown, status = 200): Response {
 function cors(resp: Response): Response {
 	resp.headers.set("Access-Control-Allow-Origin", "*");
 	resp.headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-	resp.headers.set("Access-Control-Allow-Headers", "Content-Type");
+	resp.headers.set("Access-Control-Allow-Headers", "Content-Type, X-ADMIN-TOKEN");
 	return resp;
 }
 
@@ -282,6 +308,9 @@ export default {
 			}
 			if (url.pathname === "/oauth/kakao/callback" && request.method === "GET") {
 				return handleKakaoCallback(request, env); // full-page redirect, no CORS needed
+			}
+			if (url.pathname === "/api/admin/verify" && request.method === "GET") {
+				return cors(await handleAdminVerify(request, env));
 			}
 		} catch (err) {
 			return cors(json({ error: (err as Error).message }, 500));
