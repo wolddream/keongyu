@@ -800,7 +800,6 @@
             tab: 'explore',
             bottomSheet: null, // 'upload', 'notifSetting', 'notifInbox', 'share', 'customShop', 'charge'
             followRouteId: null,
-            followStep: 0,
             notifSheetCreator: null,
             showNotifInbox: false,
             review: { stars: 5, text: '', images: [] },
@@ -1109,7 +1108,6 @@
         if (n) n.read = true;
         state.ui.bottomSheet = null;
         state.ui.followRouteId = routeId;
-        state.ui.followStep = 0;
         saveState();
         render();
       };
@@ -1581,22 +1579,22 @@
       // ==========================================
       window.startFollowRoute = function(routeId) {
         state.ui.followRouteId = routeId;
-        state.ui.followStep = 0;
         saveState();
         render();
       };
 
       window.closeFollowRoute = function() {
         state.ui.followRouteId = null;
-        state.ui.followStep = 0;
         saveState();
         render();
       };
 
-      window.gpsCheckInCurrentStep = function() {
-        const route = state.routes.find(r => r.id === state.ui.followRouteId);
+      // Follow overlay shows every step at once (scrollable timeline), so GPS check-in
+      // targets an explicit step index rather than an implicit "current step".
+      window.gpsCheckInStep = function(routeId, stepIdx) {
+        const route = state.routes.find(r => r.id === routeId);
         if (!route) return;
-        const key = route.id + '_' + state.ui.followStep + '_' + state.user.name;
+        const key = route.id + '_' + stepIdx + '_' + state.user.name;
         if (state.user.followCheckins[key]) {
           showToast('이미 GPS 인증을 완료한 스텝입니다!');
           return;
@@ -1607,14 +1605,14 @@
         if (!route.comments) route.comments = [];
         route.comments.unshift({
           user: state.user.name,
-          text: `📍 [${state.user.name}] 스텝 ${state.ui.followStep + 1} GPS 인증 완료! 발도장 꾹 ✨`
+          text: `📍 [${state.user.name}] 스텝 ${stepIdx + 1} GPS 인증 완료! 발도장 꾹 ✨`
         });
         saveState();
         showToast('스텝 GPS 인증 성공! ⭐+5 별사탕 적립');
         render();
       };
 
-      // Demo-only: simulate a fellow participant checking in at the current step.
+      // Demo-only: simulate a fellow participant checking in at a given step.
       window.verifyParticipantGPS = function(routeId, step, name) {
         const route = state.routes.find(r => r.id === routeId);
         if (!route) return;
@@ -1626,27 +1624,6 @@
         saveState();
         showToast(`${name}님이 GPS 인증을 완료했어요! 📍`);
         render();
-      };
-
-      window.nextFollowStep = function() {
-        const route = state.routes.find(r => r.id === state.ui.followRouteId);
-        if (!route) return;
-        if (state.ui.followStep < route.steps.length - 1) {
-          state.ui.followStep++;
-          saveState();
-          render();
-        } else {
-          // Finish modal
-          window.openFinishModal();
-        }
-      };
-
-      window.prevFollowStep = function() {
-        if (state.ui.followStep > 0) {
-          state.ui.followStep--;
-          saveState();
-          render();
-        }
       };
 
       window.openFinishModal = function() {
@@ -1968,7 +1945,6 @@
         const removed = route.steps.splice(stepIdx, 1)[0];
         if (!route.editLog) route.editLog = [];
         route.editLog.unshift({ user: state.user.name, avatar: getAvatarDisplay(state.user.name), action: `삭제: ${removed.name}`, time: '방금' });
-        if (state.ui.followStep >= route.steps.length) state.ui.followStep = route.steps.length - 1;
         saveState();
         render();
         showToast('스텝이 삭제됐어요 🗑️');
@@ -2060,7 +2036,9 @@
         // 2b. Lock background scroll while a sheet/overlay covers the screen
         // (prevents the page behind a bottom sheet from rubber-banding on mobile).
         const anyOverlayOpen = !!(state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.stopEditor || state.ui.followRouteId || state.ui.loginSheet || state.ui.profileSheet);
+        // overflow:hidden on body alone doesn't stop <html> from scrolling - lock both.
         document.body.style.overflow = anyOverlayOpen ? 'hidden' : '';
+        document.documentElement.style.overflow = anyOverlayOpen ? 'hidden' : '';
 
         // 3. Count unread notifications
         const unreadCount = state.notifications.filter(n => !n.read).length;
@@ -2476,14 +2454,17 @@
         // 6. Overlays & Sheets
         // ==========================================
 
-        // A. Follow Route Fullscreen Overlay
+        // A. Follow Route Fullscreen Overlay - full scrollable timeline (all steps visible at once)
         if (state.ui.followRouteId) {
           const route = state.routes.find(r => r.id === state.ui.followRouteId) || state.routes[0];
           const totalSteps = route.steps.length;
-          const currentStep = route.steps[state.ui.followStep] || route.steps[0];
-          const checkinKey = route.id + '_' + state.ui.followStep + '_' + state.user.name;
-          const isChecked = !!state.user.followCheckins[checkinKey];
           const participants = (route.participants && route.participants.length) ? route.participants : [{ name: state.user.name, avatar: getAvatarDisplay(state.user.name) }];
+          const myCheckedCount = route.steps.filter((_, i) => state.user.followCheckins[route.id + '_' + i + '_' + state.user.name]).length;
+          const STEP_VISUAL = {
+            'START': { bg: '#E8F5E9', color: '#2E7D32', emoji: '🚩' },
+            '도착': { bg: '#FFEBEE', color: '#C62828', emoji: '🏁' }
+          };
+          const getStepVisual = (type) => STEP_VISUAL[type] || { bg: '#EDE7F6', color: 'var(--primary)', emoji: '📍' };
 
           html += `
             <div class="fullscreen-overlay">
@@ -2491,12 +2472,12 @@
                 <!-- Top Nav -->
                 <div style="padding:14px 16px; background:#FFF; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
                   <button class="icon-btn" onclick="closeFollowRoute()">✕</button>
-                  <div style="display:flex; align-items:center; gap:6px; max-width:260px; overflow:hidden;">
+                  <div style="display:flex; align-items:center; gap:6px; max-width:220px; overflow:hidden;">
                     <div class="avatar-wrapper" style="width:24px; height:24px; font-size:13px; flex-shrink:0;">${getAvatarDisplay(route.creator)}</div>
                     <div style="font-size:14px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(route.title)}</div>
                   </div>
                   <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-                    <span style="font-size:12px; font-weight:800; color:var(--primary);">${state.ui.followStep + 1}/${totalSteps}</span>
+                    <span style="font-size:12px; font-weight:800; color:var(--primary);">✓ ${myCheckedCount}/${totalSteps}</span>
                     <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openShareSheet('${route.id}')" title="공유">↗</button>
                     <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openCollabSheet('${route.id}')" title="함께가기">👥</button>
                   </div>
@@ -2515,62 +2496,74 @@
                   </div>
                 ` : ''}
 
-                <!-- Step Segment Bar -->
-                <div style="display:flex; height:4px; background:#EEE;">
-                  ${route.steps.map((_, i) => `
-                    <div style="flex:1; background:${i <= state.ui.followStep ? 'var(--primary)' : '#E5E8EB'}; margin:0 1px;"></div>
-                  `).join('')}
+                <!-- Overall Progress Bar (my check-ins across all steps) -->
+                <div style="height:4px; background:#EEE;">
+                  <div style="height:100%; width:${totalSteps ? Math.round((myCheckedCount / totalSteps) * 100) : 0}%; background:var(--mint); transition:width 0.3s;"></div>
                 </div>
 
-                <!-- Step Body -->
-                <div style="padding:18px 16px; flex:1; overflow-y:auto; overscroll-behavior:contain; display:flex; flex-direction:column; gap:14px;">
-                  <div style="background:#FFF; border-radius:20px; padding:20px; border:1px solid var(--border); box-shadow:0 4px 16px rgba(0,0,0,0.04); display:flex; flex-direction:column; gap:12px; position:relative; overflow:hidden;">
-                    <div style="position:absolute; top:10px; right:14px; font-size:42px; opacity:0.16; transform:rotate(12deg); pointer-events:none;">${getStickerDisplay(route.creator)}</div>
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                      <span class="purpose-pill" style="background:${currentStep.type === 'START' ? '#E8F5E9' : currentStep.type === '도착' ? '#FFEBEE' : '#EDE7F6'}; color:${currentStep.type === 'START' ? '#2E7D32' : currentStep.type === '도착' ? '#C62828' : 'var(--primary)'}; font-size:12px;">
-                        ${currentStep.type}
-                      </span>
-                      <span style="font-size:12px; font-weight:700; color:var(--text-sub);">예상비용: ${currentStep.cost}</span>
-                    </div>
+                <!-- Scrollable Timeline -->
+                <div style="padding:18px 16px 4px; flex:1; overflow-y:auto; overscroll-behavior:contain;">
+                  ${route.steps.map((step, idx) => {
+                    const sv = getStepVisual(step.type);
+                    const isLast = idx === totalSteps - 1;
+                    const stepEditable = route.isCollaborative && canEdit(route.id);
+                    return `
+                      <div style="display:flex; align-items:stretch; gap:12px;">
+                        <!-- Timeline dot + connecting line -->
+                        <div style="display:flex; flex-direction:column; align-items:center; width:14px; flex-shrink:0; padding-top:6px;">
+                          <div style="width:12px; height:12px; border-radius:50%; background:var(--primary); flex-shrink:0;"></div>
+                          ${!isLast ? `<div style="width:2px; flex:1; background:#E5D9FF; margin-top:2px;"></div>` : ''}
+                        </div>
 
-                    <div style="font-size:18px; font-weight:900;">${esc(currentStep.name)}</div>
-                    <div style="font-size:13px; color:var(--text-sub);">📍 ${esc(currentStep.address)}</div>
+                        <!-- Step card -->
+                        <div style="flex:1; min-width:0; padding-bottom:18px;">
+                          <div style="background:#FFF; border-radius:18px; padding:14px; border:1px solid var(--border); box-shadow:0 2px 8px rgba(0,0,0,0.03); display:flex; gap:12px;">
+                            <div style="width:56px; height:56px; border-radius:14px; background:${sv.bg}; color:${sv.color}; display:flex; align-items:center; justify-content:center; font-size:26px; flex-shrink:0;">${sv.emoji}</div>
+                            <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:4px;">
+                              <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+                                <span class="purpose-pill" style="background:${sv.bg}; color:${sv.color}; font-size:11px;">${esc(step.type)}</span>
+                                <span style="font-size:11px; font-weight:700; color:var(--text-sub); flex-shrink:0;">${esc(step.cost)}</span>
+                              </div>
+                              <div style="font-size:15px; font-weight:900; line-height:1.3;">${esc(step.name)}</div>
+                              <div style="font-size:12px; color:var(--text-sub); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">📍 ${esc(step.address)}</div>
+                            </div>
+                          </div>
 
-                    <div style="background:#F9F9F8; border-radius:12px; padding:12px; font-size:13px; line-height:1.5;">
-                      💡 <strong>크리에이터 메모:</strong><br/>${esc(currentStep.memo)}
-                    </div>
+                          ${step.memo ? `
+                            <div style="background:#F9F9F8; border-radius:12px; padding:10px 12px; font-size:12px; line-height:1.5; margin-top:8px;">
+                              💡 <strong>크리에이터 메모:</strong> ${esc(step.memo)}
+                            </div>
+                          ` : ''}
 
-                    ${route.isCollaborative ? `
-                      <div class="step-mini-actions" style="${canEdit(route.id) ? '' : 'opacity:0.5;'}">
-                        <button class="step-mini-btn" onclick="openCollabEditSheet('${route.id}', ${state.ui.followStep})">✏️ 수정</button>
-                        <button class="step-mini-btn" onclick="deleteStep('${route.id}', ${state.ui.followStep})">🗑️ 삭제</button>
-                        <button class="step-mini-btn" onclick="openAddStepSheet('${route.id}', ${state.ui.followStep})">➕ 아래에 추가</button>
+                          ${route.isCollaborative ? `
+                            <div class="step-mini-actions" style="${stepEditable ? '' : 'opacity:0.5;'} margin-top:8px;">
+                              <button class="step-mini-btn" onclick="openCollabEditSheet('${route.id}', ${idx})">✏️ 수정</button>
+                              <button class="step-mini-btn" onclick="deleteStep('${route.id}', ${idx})">🗑️ 삭제</button>
+                              <button class="step-mini-btn" onclick="openAddStepSheet('${route.id}', ${idx})">➕ 아래에 추가</button>
+                            </div>
+                          ` : ''}
+
+                          <!-- GPS Check-in for this step -->
+                          <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+                            ${participants.map(p => {
+                              const pKey = route.id + '_' + idx + '_' + p.name;
+                              const pChecked = !!state.user.followCheckins[pKey];
+                              const isMe = p.name === state.user.name;
+                              if (!route.isCollaborative && !isMe) return '';
+                              return `
+                                <button class="cta-btn" style="padding:9px; font-size:12px; background:${pChecked ? '#2DD4A0' : (isMe ? 'var(--primary)' : '#EEE')}; color:${pChecked ? '#FFF' : (isMe ? '#FFF' : 'var(--text)')};" data-route-id="${esc(route.id)}" data-step="${idx}" data-name="${esc(p.name)}" onclick="${isMe ? 'gpsCheckInStep(this.dataset.routeId, Number(this.dataset.step))' : 'verifyParticipantGPS(this.dataset.routeId, Number(this.dataset.step), this.dataset.name)'}">
+                                  ${p.avatar || ''} ${isMe ? '나' : esc(p.name)} 인증 ${pChecked ? '✅' : (isMe ? '📍 (+5⭐)' : '⏳')}
+                                </button>
+                              `;
+                            }).join('')}
+                          </div>
+                        </div>
                       </div>
-                    ` : ''}
-
-                    <!-- GPS Check-in -->
-                    ${route.isCollaborative ? `
-                      <div style="display:flex; flex-direction:column; gap:8px;">
-                        ${participants.map(p => {
-                          const pKey = route.id + '_' + state.ui.followStep + '_' + p.name;
-                          const pChecked = !!state.user.followCheckins[pKey];
-                          const isMe = p.name === state.user.name;
-                          return `
-                            <button class="cta-btn" style="padding:10px; font-size:13px; background:${pChecked ? '#2DD4A0' : (isMe ? 'var(--primary)' : '#EEE')}; color:${pChecked ? '#FFF' : (isMe ? '#FFF' : 'var(--text)')};" data-route-id="${esc(route.id)}" data-step="${state.ui.followStep}" data-name="${esc(p.name)}" onclick="${isMe ? 'gpsCheckInCurrentStep()' : 'verifyParticipantGPS(this.dataset.routeId, Number(this.dataset.step), this.dataset.name)'}">
-                              ${p.avatar || ''} ${isMe ? '나' : esc(p.name)} 인증 ${pChecked ? '✅' : (isMe ? '📍 (+5⭐)' : '⏳')}
-                            </button>
-                          `;
-                        }).join('')}
-                      </div>
-                    ` : `
-                      <button class="cta-btn" style="padding:12px; font-size:14px; background:${isChecked ? '#2DD4A0' : 'var(--primary)'};" onclick="gpsCheckInCurrentStep()">
-                        ${isChecked ? '✓ 현 위치 GPS 인증 완료' : '📍 이 스텝 GPS 인증하기 (+5⭐)'}
-                      </button>
-                    `}
-                  </div>
+                    `;
+                  }).join('')}
 
                   <!-- Comments section for social proof -->
-                  <div style="background:#FFF; border-radius:18px; padding:16px; border:1px solid var(--border);">
+                  <div style="background:#FFF; border-radius:18px; padding:16px; border:1px solid var(--border); margin-bottom:14px;">
                     <div style="font-size:13px; font-weight:800; margin-bottom:8px;">실시간 발도장 댓글</div>
                     ${(route.comments && route.comments.length > 0) ? route.comments.map(c => `
                       <div style="font-size:12px; padding:6px 0; border-bottom:1px solid #F0F0EE;">
@@ -2581,8 +2574,8 @@
                     `}
                   </div>
 
-                  ${(state.ui.followStep === totalSteps - 1 && route.editLog && route.editLog.length > 0) ? `
-                    <div style="background:#FFF; border-radius:18px; padding:16px; border:1px solid var(--border);">
+                  ${(route.editLog && route.editLog.length > 0) ? `
+                    <div style="background:#FFF; border-radius:18px; padding:16px; border:1px solid var(--border); margin-bottom:14px;">
                       <div style="font-size:13px; font-weight:800; margin-bottom:4px;">📝 수정 타임라인</div>
                       ${route.editLog.slice(0, 5).map(l => `
                         <div class="edit-log-item">
@@ -2596,13 +2589,10 @@
                   ` : ''}
                 </div>
 
-                <!-- Bottom Follow Controls -->
-                <div style="padding:12px 16px; background:#FFF; border-top:1px solid var(--border); display:flex; gap:10px;">
-                  <button class="cta-btn" style="background:#EEE; color:${state.ui.followStep === 0 ? '#999' : 'var(--text)'}; opacity:${state.ui.followStep === 0 ? '0.5' : '1'}; flex:1;" ${state.ui.followStep === 0 ? 'disabled' : ''} onclick="prevFollowStep()">
-                    이전
-                  </button>
-                  <button class="cta-btn" style="flex:2;" onclick="nextFollowStep()">
-                    ${state.ui.followStep === totalSteps - 1 ? '완주하고 인증하기 🎉' : '다음 스텝 ➔'}
+                <!-- Bottom Action -->
+                <div style="padding:12px 16px; background:#FFF; border-top:1px solid var(--border);">
+                  <button class="cta-btn" style="width:100%; padding:13px; font-size:14px;" onclick="openFinishModal()">
+                    완주하고 인증하기 🎉
                   </button>
                 </div>
               </div>
