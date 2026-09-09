@@ -179,6 +179,7 @@
         padding: 20px; max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 16px;
         animation: slideUp 0.25s ease-out;
       }
+      .bottom-sheet.no-anim { animation: none; }
       @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
       .fullscreen-overlay {
         position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg);
@@ -1983,6 +1984,12 @@
       // 열려있는 동안 주기적으로 다시 불러오는 걸로 대신한다.
       let _chatPollTimer = null;
 
+      // Tracked across render() calls (not part of `state` - these are rendering/navigation
+      // bookkeeping, not app data): which sheet-like UI last got the slideUp entrance animation,
+      // and whether we've pushed a history entry for "some overlay is open" (mobile back-button).
+      let _lastOpenSheetKey = null;
+      let _overlayHistoryPushed = false;
+
       window.openRouteChat = function(routeId) {
         state.ui.chatSheet = { routeId };
         state.ui.chatMessages = [];
@@ -2551,6 +2558,30 @@
         // overflow:hidden on body alone doesn't stop <html> from scrolling - lock both.
         document.body.style.overflow = anyOverlayOpen ? 'hidden' : '';
         document.documentElement.style.overflow = anyOverlayOpen ? 'hidden' : '';
+
+        // 2c. Only replay .bottom-sheet's slideUp entrance animation when a *different* sheet just
+        // opened. Every click inside an already-open sheet also calls render(), which tears down
+        // and recreates the same .bottom-sheet element (full innerHTML replace) - without this,
+        // that replays the entrance animation every time, looking like the whole sheet drops and
+        // slides back up on every tap (reported for the 충전소 sheet, but it's every sheet).
+        const currentSheetKey = state.ui.stopEditor ? 'stopEditor' : state.ui.profileSheet ? 'profileSheet' : state.ui.bottomSheet || null;
+        const sheetJustOpened = currentSheetKey !== _lastOpenSheetKey;
+        _lastOpenSheetKey = currentSheetKey;
+        const bottomSheetClass = sheetJustOpened ? 'bottom-sheet' : 'bottom-sheet no-anim';
+
+        // 2d. Mobile back-button: fake one layer of history for "something is open" so the
+        // hardware/gesture back button closes the topmost sheet/overlay instead of leaving the
+        // app. No real router here, so this pushes one history entry the first time an overlay
+        // opens and consumes it (history.back()) if the app itself closes the overlay without the
+        // back button being pressed - keeps our flag and the actual history stack in sync either
+        // way. The corresponding popstate handler is registered once, below.
+        if (anyOverlayOpen && !_overlayHistoryPushed) {
+          history.pushState({ keongyuOverlay: true }, '');
+          _overlayHistoryPushed = true;
+        } else if (!anyOverlayOpen && _overlayHistoryPushed) {
+          _overlayHistoryPushed = false;
+          history.back();
+        }
 
         // 3. Count unread notifications
         const unreadCount = state.notifications.filter(n => !n.read).length;
@@ -3192,7 +3223,7 @@
 
           html += `
             <div class="sheet-backdrop" onclick="closeSheet()">
-              <div class="bottom-sheet" onclick="event.stopPropagation()">
+              <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <div style="display:flex; align-items:center; gap:8px;">
                     <div class="avatar-wrapper" style="border:${tier.border}; width:36px; height:36px;">
@@ -3246,7 +3277,7 @@
         if (state.ui.bottomSheet === 'notifInbox') {
           html += `
             <div class="sheet-backdrop" onclick="closeSheet()">
-              <div class="bottom-sheet" onclick="event.stopPropagation()">
+              <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <div style="font-size:16px; font-weight:900;">알림 수신함</div>
                   <div style="display:flex; gap:6px;">
@@ -3289,7 +3320,7 @@
           const rb = state.ui.routeBuilder;
           html += `
             <div class="sheet-backdrop" onclick="cancelRouteBuilder()">
-              <div class="bottom-sheet" onclick="event.stopPropagation()">
+              <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <div style="font-size:16px; font-weight:900;">새 루트 만들기</div>
                   <button class="icon-btn" onclick="cancelRouteBuilder()">✕</button>
@@ -3351,7 +3382,7 @@
           const isFirst = builder ? (se.editingIndex === null ? builder.steps.length === 0 : se.editingIndex === 0) : true;
           html += `
             <div class="sheet-backdrop" onclick="closeStopEditor()">
-              <div class="bottom-sheet" onclick="event.stopPropagation()">
+              <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <div style="font-size:16px; font-weight:900;">${se.editingIndex === null ? '경유지 추가' : '경유지 수정'}</div>
                   <button class="icon-btn" onclick="closeStopEditor()">✕</button>
@@ -3462,7 +3493,7 @@
         if (state.ui.bottomSheet === 'finishCertification') {
           html += `
             <div class="sheet-backdrop" onclick="closeSheet()">
-              <div class="bottom-sheet" onclick="event.stopPropagation()">
+              <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
                 <div style="font-size:18px; font-weight:900; text-align:center;">🎉 루트 완주를 축하합니다!</div>
                 <div style="font-size:13px; text-align:center; color:var(--text-sub);">별점과 인증샷으로 완주 스탬프를 받으세요</div>
 
@@ -3501,7 +3532,7 @@
           const lc = state.ui.lastCompletion || { distance: '-', time: '-', earned: 0 };
           html += `
             <div class="sheet-backdrop">
-              <div class="bottom-sheet" style="text-align:center; padding:30px 20px;">
+              <div class="${bottomSheetClass}" style="text-align:center; padding:30px 20px;">
                 <div class="avatar-wrapper" style="width:56px; height:56px; font-size:30px; margin:0 auto;">
                   <span>${AVATAR_MAP[state.custom.equipped.avatar] || '🐻'}</span>
                   <span class="sticker-badge" style="font-size:16px;">${STICKER_MAP[state.custom.equipped.sticker] || '❤️'}</span>
@@ -3543,7 +3574,7 @@
           const sRoute = state.routes.find(r => r.id === state.ui.shareRouteId) || state.routes[0];
           html += `
             <div class="sheet-backdrop" onclick="closeSheet()">
-              <div class="bottom-sheet" onclick="event.stopPropagation()">
+              <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <div style="display:flex; align-items:center; gap:8px;">
                     <span style="font-size:24px;">${AVATAR_MAP[state.custom.equipped.avatar] || '🐻'}</span>
@@ -3619,7 +3650,7 @@
 
           html += `
             <div class="sheet-backdrop" onclick="closeSheet()">
-              <div class="bottom-sheet" onclick="event.stopPropagation()">
+              <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <div style="font-size:16px; font-weight:900;">🎨 꾸미기 상점 (보유: ⭐ ${state.user.points})</div>
                   <button class="icon-btn" onclick="closeSheet()">✕</button>
@@ -3657,7 +3688,7 @@
         if (state.ui.bottomSheet === 'charge') {
           html += `
             <div class="sheet-backdrop" onclick="closeSheet()">
-              <div class="bottom-sheet" onclick="event.stopPropagation()">
+              <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <div style="font-size:16px; font-weight:900;">⭐ 별사탕 충전소</div>
                   <button class="icon-btn" onclick="closeSheet()">✕</button>
@@ -3706,7 +3737,7 @@
             : [makeParticipant(state.user.name, true)];
           html += `
             <div class="sheet-backdrop" onclick="closeSheet()">
-              <div class="bottom-sheet" onclick="event.stopPropagation()">
+              <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <div style="font-size:16px; font-weight:900;">함께 계획하기</div>
                   <button class="icon-btn" onclick="closeSheet()">✕</button>
@@ -3759,7 +3790,7 @@
           const eStep = eSheet.mode === 'edit' && eRoute ? eRoute.steps[eSheet.stepIndex] : null;
           html += `
             <div class="sheet-backdrop" onclick="closeSheet()">
-              <div class="bottom-sheet" onclick="event.stopPropagation()">
+              <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <div style="font-size:16px; font-weight:900;">${eSheet.mode === 'add' ? '장소 추가' : '장소 수정'}</div>
                   <button class="icon-btn" onclick="closeSheet()">✕</button>
@@ -3780,7 +3811,7 @@
           if (ls.mode === 'email') {
             html += `
               <div class="sheet-backdrop" ${canClose ? `onclick="closeSheet()"` : ''}>
-                <div class="bottom-sheet" onclick="event.stopPropagation()">
+                <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
                   <div style="display:flex; justify-content:space-between; align-items:center;">
                     <div style="font-size:16px; font-weight:900;">이메일로 시작하기</div>
                     ${canClose ? `<button class="icon-btn" onclick="closeSheet()">✕</button>` : ''}
@@ -3802,7 +3833,7 @@
           } else {
             html += `
               <div class="sheet-backdrop" ${canClose ? `onclick="closeSheet()"` : ''}>
-                <div class="bottom-sheet" onclick="event.stopPropagation()" style="text-align:center; gap:16px;">
+                <div class="${bottomSheetClass}" onclick="event.stopPropagation()" style="text-align:center; gap:16px;">
                   ${canClose ? `<div style="display:flex; justify-content:flex-end;"><button class="icon-btn" onclick="closeSheet()">✕</button></div>` : ''}
                   <div>
                     <div style="font-size:20px; font-weight:900;">경유 시작하기</div>
@@ -3826,7 +3857,7 @@
           const providerLabel = { kakao: '카카오', email: '이메일', anon: '익명' }[state.user.provider] || '익명';
           html += `
             <div class="sheet-backdrop" onclick="closeSheet()">
-              <div class="bottom-sheet" onclick="event.stopPropagation()">
+              <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <div style="font-size:16px; font-weight:900;">내 프로필</div>
                   <div style="display:flex; align-items:center; gap:8px;">
@@ -3917,10 +3948,10 @@
         }
       });
 
-      // Esc closes whatever sheet/overlay is currently on top.
-      document.addEventListener('keydown', e => {
-        if (e.key !== 'Escape') return;
-        if (state.ui.loginSheet && !state.user.isLoggedIn) return; // 최초 로그인 유도는 Esc로 닫지 않음
+      // Closes whichever sheet/overlay is currently on top, same cascade Esc and the mobile
+      // back-button both need. Returns true if something was actually closed.
+      function closeTopmostOverlay() {
+        if (state.ui.loginSheet && !state.user.isLoggedIn) return false; // 최초 로그인 유도는 닫지 않음
         if (state.ui.photoLightbox) {
           closePhotoLightbox();
         } else if (state.ui.chatSheet) {
@@ -3931,7 +3962,24 @@
           closeSheet();
         } else if (state.ui.followRouteId) {
           closeFollowRoute();
+        } else {
+          return false;
         }
+        return true;
+      }
+
+      // Esc closes whatever sheet/overlay is currently on top.
+      document.addEventListener('keydown', e => {
+        if (e.key !== 'Escape') return;
+        closeTopmostOverlay();
+      });
+
+      // Mobile back-button: pressing the hardware/gesture back button while a sheet/overlay is
+      // open should close it instead of leaving the app - see the history.pushState/back() pairing
+      // in render() (2d) that keeps one fake history entry in sync with "something is open".
+      window.addEventListener('popstate', () => {
+        _overlayHistoryPushed = false;
+        closeTopmostOverlay();
       });
 
       // Initial Render
