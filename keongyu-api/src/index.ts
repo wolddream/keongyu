@@ -5,6 +5,7 @@
  *   GET  /api/routes                       -> list routes (+ steps) from D1
  *   GET  /api/routes/:id                   -> one route (+ steps, comments, edit log)
  *   POST /api/routes                       -> create a route (steps + per-step photos -> R2)
+ *   PATCH /api/routes/:id                  -> update route-level metadata (title/purpose/etc)
  *   PUT  /api/routes/:id/steps             -> replace a route's whole steps list (+ edit log)
  *   POST /api/routes/:id/like              -> toggle a like
  *   POST /api/routes/:id/checkin           -> toggle a GPS step check-in (+ points, comment)
@@ -18,12 +19,15 @@
  *   PATCH /api/users/:id                   -> update profile / adjust points
  *   GET  /api/chat?route_id=&step_index=   -> list chat messages
  *   POST /api/chat                         -> insert a chat message (DO broadcast: 5️⃣ 단계에서 연결)
+ *   POST /api/auth/email/send              -> generate + email a 6-digit login code (real SMTP)
+ *   POST /api/auth/email/verify            -> check a code, consume it on success
  *   ※ Turnstile 봇 방지는 사용자 요청으로 중단됨 (verifyTurnstile()는 남겨뒀지만 미호출)
  *   GET  /oauth/kakao/callback             -> Kakao OAuth redirect target
  *   GET  /api/admin/verify                 -> checks X-ADMIN-TOKEN header against env.ADMIN_TOKEN
  *
  * Bindings (wrangler.jsonc): DB (D1), IMAGES (R2)
- * Secrets (wrangler secret put): TURNSTILE_SECRET_KEY, KAKAO_REST_API_KEY, (optional) KAKAO_CLIENT_SECRET, ADMIN_TOKEN
+ * Secrets (wrangler secret put): TURNSTILE_SECRET_KEY, KAKAO_REST_API_KEY, (optional) KAKAO_CLIENT_SECRET,
+ *   ADMIN_TOKEN, SMTP_SERVER, SMTP_PORT, SENDER_EMAIL, APP_PASSWORD
  *
  * No real session auth: every endpoint trusts whatever user_id/creator_id the client sends, same
  * trust model as the original 4-endpoint version of this Worker. Fine for this project's current
@@ -34,9 +38,10 @@ import { cors, json } from "./util";
 import { handleAdminVerify } from "./admin";
 import { handleKakaoCallback } from "./kakao";
 import { handleChat, handleGetChat } from "./chat";
-import { handleGetRoutes, handleGetRouteDetail, handlePostRoutes, handlePutRouteSteps, handleGetImage } from "./routes";
+import { handleGetRoutes, handleGetRouteDetail, handlePostRoutes, handlePutRouteSteps, handlePatchRoute, handleGetImage } from "./routes";
 import { handleToggleLike, handleToggleCheckin, handleGetSubscriptions, handlePostSubscription, handleDeleteSubscription, handleGetNotifications, handleMarkAllNotificationsRead } from "./social";
 import { handleGetUser, handlePatchUser } from "./profile";
+import { handleSendEmailCode, handleVerifyEmailCode } from "./auth";
 
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
@@ -57,6 +62,9 @@ export default {
 			// /api/routes/:id
 			if (segments[0] === "api" && segments[1] === "routes" && segments.length === 3 && request.method === "GET") {
 				return cors(await handleGetRouteDetail(env, segments[2]));
+			}
+			if (segments[0] === "api" && segments[1] === "routes" && segments.length === 3 && request.method === "PATCH") {
+				return cors(await handlePatchRoute(request, env, segments[2]));
 			}
 			// /api/routes/:id/steps
 			if (segments[0] === "api" && segments[1] === "routes" && segments[3] === "steps" && request.method === "PUT") {
@@ -108,6 +116,12 @@ export default {
 			}
 			if (url.pathname === "/api/chat" && request.method === "POST") {
 				return cors(await handleChat(request, env));
+			}
+			if (url.pathname === "/api/auth/email/send" && request.method === "POST") {
+				return cors(await handleSendEmailCode(request, env));
+			}
+			if (url.pathname === "/api/auth/email/verify" && request.method === "POST") {
+				return cors(await handleVerifyEmailCode(request, env));
 			}
 			if (url.pathname === "/oauth/kakao/callback" && request.method === "GET") {
 				return handleKakaoCallback(request, env); // full-page redirect, no CORS needed

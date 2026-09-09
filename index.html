@@ -338,7 +338,7 @@
       }
 
       window.openLoginSheet = function(mode) {
-        state.ui.loginSheet = { mode: mode || 'initial', email: '', codeSent: false, sentCode: null, sentAt: 0 };
+        state.ui.loginSheet = { mode: mode || 'initial', email: '', codeSent: false, sentAt: 0, sending: false, verifying: false };
         state.ui.profileSheet = false;
         render();
       };
@@ -434,11 +434,11 @@
         if (state.ui.loginSheet) state.ui.loginSheet.email = e.target.value;
       };
 
-      // 데모 시뮬레이션: 실제 메일 발송 없이 6자리 코드를 생성해 토스트로 보여줍니다.
-      // TODO(D1/이메일 연동): 실제로는 Worker에서 코드 생성 -> 이메일 발송 -> D1/KV에 임시 저장.
-      window.sendLoginCode = function() {
+      // 실제 이메일 발송: keongyu-api가 6자리 코드를 생성해 D1에 저장하고 SMTP로 보낸다
+      // (POST /api/auth/email/send). 코드 자체는 서버에만 있고 클라이언트로 내려오지 않는다.
+      window.sendLoginCode = async function() {
         const sheet = state.ui.loginSheet;
-        if (!sheet) return;
+        if (!sheet || sheet.sending) return;
         if (!sheet.email || !sheet.email.includes('@')) {
           showToast('올바른 이메일을 입력해주세요.');
           return;
@@ -447,41 +447,76 @@
           showToast('잠시 후 다시 시도해주세요. (30초 제한)');
           return;
         }
-        const code = String(Math.floor(100000 + Math.random() * 900000));
-        sheet.sentCode = code;
-        sheet.codeSent = true;
-        sheet.sentAt = Date.now();
-        showToast(`인증코드: ${code} (데모)`);
+        sheet.sending = true;
         render();
+        try {
+          const res = await fetch(`${API_BASE}/api/auth/email/send`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ email: sheet.email }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            showToast(data.error || '이메일 발송에 실패했어요.');
+            return;
+          }
+          sheet.codeSent = true;
+          sheet.sentAt = Date.now();
+          showToast(`${sheet.email}로 인증코드를 보냈어요! 📧`);
+        } catch (err) {
+          showToast('이메일 발송에 실패했어요. 네트워크를 확인해주세요.');
+        } finally {
+          sheet.sending = false;
+          render();
+        }
       };
 
-      window.verifyLoginCode = function() {
+      window.verifyLoginCode = async function() {
         const sheet = state.ui.loginSheet;
-        if (!sheet || !sheet.sentCode) {
+        if (!sheet || sheet.verifying) return;
+        if (!sheet.codeSent) {
           showToast('먼저 인증코드를 발송해주세요.');
           return;
         }
         const inputCode = (document.getElementById('login-email-code') || {}).value || '';
-        if (inputCode.trim() !== sheet.sentCode) {
-          showToast('인증코드가 일치하지 않아요.');
+        if (!inputCode.trim()) {
+          showToast('인증코드를 입력해주세요.');
           return;
         }
-        const email = sheet.email;
-        const namePart = email.split('@')[0];
-        const oldName = state.user.name;
-        migrateCreatorName(oldName, namePart);
-        Object.assign(state.user, {
-          id: 'email_' + email,
-          name: namePart,
-          avatar: hashNameToAvatar(email),
-          email,
-          provider: 'email',
-          isLoggedIn: true
-        });
-        closeSheet();
-        safeSave();
+        sheet.verifying = true;
         render();
-        showToast(`환영해요, ${esc(namePart)}님! 👋`);
+        try {
+          const res = await fetch(`${API_BASE}/api/auth/email/verify`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ email: sheet.email, code: inputCode.trim() }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            showToast(data.error || '인증코드가 일치하지 않아요.');
+            return;
+          }
+          const email = sheet.email;
+          const namePart = email.split('@')[0];
+          const oldName = state.user.name;
+          migrateCreatorName(oldName, namePart);
+          Object.assign(state.user, {
+            id: 'email_' + email,
+            name: namePart,
+            avatar: hashNameToAvatar(email),
+            email,
+            provider: 'email',
+            isLoggedIn: true
+          });
+          closeSheet();
+          safeSave();
+          showToast(`환영해요, ${esc(namePart)}님! 👋`);
+        } catch (err) {
+          showToast('로그인 처리에 실패했어요. 네트워크를 확인해주세요.');
+        } finally {
+          sheet.verifying = false;
+          render();
+        }
       };
 
       window.continueAsAnon = function() {
@@ -683,6 +718,18 @@
           user_name: state.user.name,
           avatar: getAvatarDisplay(state.user.name),
           action,
+        });
+      }
+
+      function syncRoutePatchToServer(route) {
+        apiJson(`/api/routes/${encodeURIComponent(route.id)}`, 'PATCH', {
+          title: route.title,
+          purpose: route.purpose,
+          distance: route.distance,
+          time: route.time,
+          budget: route.budget,
+          tags: route.tags,
+          is_public: !!route.isPublic,
         });
       }
 
@@ -1086,7 +1133,7 @@
             collabSheet: null, // { routeId }
             collabEditSheet: null, // { routeId, stepIndex, mode: 'edit'|'add', afterIdx }
             charge: { pack: null, method: null },
-            loginSheet: null, // { mode:'initial'|'email', email, codeSent, sentCode, sentAt } or null
+            loginSheet: null, // { mode:'initial'|'email', email, codeSent, sentAt, sending, verifying } or null
             profileSheet: false,
             routeBuilder: null, // { title, purpose, distance, time, budget, steps: [] } - 새 루트 만들기 진행 중 상태
             stopEditor: null, // { editingIndex, category, name, ... } - 경유지 추가/수정 폼 상태
@@ -1521,7 +1568,32 @@
           return;
         }
         state.ui.bottomSheet = 'upload';
-        state.ui.routeBuilder = { title: '', purpose: ROUTE_PURPOSES[0], distance: '', time: '', budget: '', steps: [] };
+        state.ui.routeBuilder = { editingRouteId: null, title: '', purpose: ROUTE_PURPOSES[0], distance: '', time: '', budget: '', steps: [] };
+        state.ui.stopEditor = null;
+        render();
+      };
+
+      // Reopens the route builder pre-filled with an existing route's data so it can be edited
+      // and re-saved through the same finalizeRouteBuilder() flow (which branches on
+      // routeBuilder.editingRouteId to update in place instead of creating a new route).
+      window.openEditRouteSheet = function(routeId) {
+        if (!state.user.isLoggedIn) {
+          showToast('로그인 후 루트를 수정할 수 있어요 🔐');
+          openLoginSheet('initial');
+          return;
+        }
+        const route = state.routes.find(r => r.id === routeId);
+        if (!route) return;
+        state.ui.bottomSheet = 'upload';
+        state.ui.routeBuilder = {
+          editingRouteId: routeId,
+          title: route.title,
+          purpose: route.purpose,
+          distance: route.distance,
+          time: route.time,
+          budget: route.budget,
+          steps: route.steps.map(s => ({ ...s, images: (s.images || []).slice() }))
+        };
         state.ui.stopEditor = null;
         render();
       };
@@ -1638,7 +1710,10 @@
       window.cancelRouteBuilder = function() {
         const builder = state.ui.routeBuilder;
         if (builder && builder.steps.length > 0) {
-          if (!confirm('작성 중인 루트를 취소할까요? 추가한 경유지가 모두 사라져요.')) return;
+          const msg = builder.editingRouteId
+            ? '수정을 취소할까요? 변경한 내용이 저장되지 않아요.'
+            : '작성 중인 루트를 취소할까요? 추가한 경유지가 모두 사라져요.';
+          if (!confirm(msg)) return;
         }
         closeSheet();
       };
@@ -1923,6 +1998,32 @@
         }));
         const budgetNum = budgetRaw ? Number(budgetRaw.replace(/[^0-9]/g, '')) : 0;
         const coverImage = orderedSteps.find(s => s.images && s.images.length)?.images[0] || null;
+
+        if (builder.editingRouteId) {
+          const route = state.routes.find(r => r.id === builder.editingRouteId);
+          if (!route) {
+            showToast('수정할 루트를 찾을 수 없어요.');
+            return;
+          }
+          route.title = title;
+          route.purpose = builder.purpose;
+          route.distance = distance || '정보 없음';
+          route.time = time || '정보 없음';
+          route.budget = budgetNum > 0 ? `${budgetNum.toLocaleString()}원` : '0원';
+          route.steps = orderedSteps;
+          if (coverImage) route.image = coverImage;
+          if (!route.editLog) route.editLog = [];
+          route.editLog.unshift({ user: state.user.name, avatar: getAvatarDisplay(state.user.name), action: '루트 정보 수정', time: '방금' });
+          state.ui.routeBuilder = null;
+          state.ui.stopEditor = null;
+          state.ui.bottomSheet = null;
+          saveState();
+          showToast('루트가 수정되었습니다! ✏️');
+          render();
+          syncRoutePatchToServer(route);
+          syncStepsToServer(route, '루트 정보 수정');
+          return;
+        }
 
         const newRoute = {
           id: 'r_' + Date.now(),
@@ -2764,13 +2865,6 @@
                       ` : `
                         <span style="font-size:11px; font-weight:700; color:var(--primary); background:#F0F0FF; padding:3px 8px; border-radius:12px;">내 루트</span>
                       `}
-                      <button class="icon-btn" style="width:30px; height:30px; font-size:13px;" onclick="startFollowRoute('${r.id}')" title="공유">
-                        ↗
-                      </button>
-                      <button class="btn-secondary" onclick="startFollowRoute('${r.id}')">👥 함께가기</button>
-                      <button class="cta-btn" onclick="startFollowRoute('${r.id}')">
-                        따라가기
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -2902,9 +2996,7 @@
                     <div style="display:flex; justify-content:space-between; align-items:center; padding-top:6px; border-top:1px solid #F0F0EE; flex-wrap:wrap; gap:6px;">
                       <button class="cta-btn" style="background:#555;" onclick="startFollowRoute('${r.id}')">미리보기</button>
                       <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                        <button class="btn-secondary" onclick="startFollowRoute('${r.id}')">👥 함께가기</button>
-                        <button class="cta-btn" style="background:#FFF; color:var(--text); border:1px solid var(--border);" onclick="startFollowRoute('${r.id}')">공유</button>
-                        <button class="cta-btn" onclick="startFollowRoute('${r.id}')">따라가기</button>
+                        <button class="btn-secondary" onclick="openEditRouteSheet('${r.id}')">✏️ 수정</button>
                         <button class="cta-btn" style="background:#FFF; color:var(--danger, #FF4242); border:1px solid var(--danger, #FF4242);" onclick="deleteMyRoute('${r.id}')">삭제</button>
                       </div>
                     </div>
@@ -3337,10 +3429,10 @@
             <div class="sheet-backdrop" onclick="cancelRouteBuilder()">
               <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <div style="font-size:16px; font-weight:900;">새 루트 만들기</div>
+                  <div style="font-size:16px; font-weight:900;">${rb.editingRouteId ? '루트 수정' : '새 루트 만들기'}</div>
                   <button class="icon-btn" onclick="cancelRouteBuilder()">✕</button>
                 </div>
-                <div style="font-size:12px; color:var(--text-sub); margin-top:-10px;">경유지를 순서대로 추가해서 나만의 루트를 완성해보세요.</div>
+                <div style="font-size:12px; color:var(--text-sub); margin-top:-10px;">${rb.editingRouteId ? '경유지를 추가/수정/삭제하고 저장해주세요.' : '경유지를 순서대로 추가해서 나만의 루트를 완성해보세요.'}</div>
 
                 <input type="text" id="builder-title" placeholder="루트 제목 (예: 성수 감성 카페 투어)" value="${esc(rb.title)}" oninput="state.ui.routeBuilder.title=this.value" style="border:1px solid var(--border); border-radius:12px; padding:11px 12px; font-size:14px; font-weight:700;" />
 
@@ -3384,7 +3476,7 @@
                   <input type="text" id="builder-budget" placeholder="예상비용(원)" value="${esc(rb.budget)}" oninput="state.ui.routeBuilder.budget=this.value" inputmode="numeric" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
                 </div>
 
-                <button class="cta-btn" style="padding:14px; font-size:14px; opacity:${rb.steps.length === 0 ? '0.5' : '1'};" onclick="finalizeRouteBuilder()">🚀 루트 등록 완료</button>
+                <button class="cta-btn" style="padding:14px; font-size:14px; opacity:${rb.steps.length === 0 ? '0.5' : '1'};" onclick="finalizeRouteBuilder()">${rb.editingRouteId ? '✅ 수정 완료' : '🚀 루트 등록 완료'}</button>
               </div>
             </div>
           `;
@@ -3835,11 +3927,11 @@
                   ${ls.codeSent ? `
                     <input type="text" id="login-email-code" placeholder="6자리 인증코드" maxlength="6" style="border:1px solid var(--border); border-radius:12px; padding:12px 14px; font-size:14px; letter-spacing:4px;" />
                     <div style="display:flex; gap:8px;">
-                      <button class="login-sub-btn" style="flex:1; border-radius:14px; padding:10px; font-weight:800; font-size:13px;" onclick="sendLoginCode()">코드 재발송</button>
-                      <button class="cta-btn" style="flex:1; padding:10px; font-size:13px;" onclick="verifyLoginCode()">로그인</button>
+                      <button class="login-sub-btn" style="flex:1; border-radius:14px; padding:10px; font-weight:800; font-size:13px; opacity:${ls.sending ? '0.5' : '1'};" ${ls.sending ? 'disabled' : ''} onclick="sendLoginCode()">${ls.sending ? '발송 중...' : '코드 재발송'}</button>
+                      <button class="cta-btn" style="flex:1; padding:10px; font-size:13px; opacity:${ls.verifying ? '0.5' : '1'};" ${ls.verifying ? 'disabled' : ''} onclick="verifyLoginCode()">${ls.verifying ? '확인 중...' : '로그인'}</button>
                     </div>
                   ` : `
-                    <button class="cta-btn" style="padding:12px; font-size:14px;" onclick="sendLoginCode()">코드 발송</button>
+                    <button class="cta-btn" style="padding:12px; font-size:14px; opacity:${ls.sending ? '0.5' : '1'};" ${ls.sending ? 'disabled' : ''} onclick="sendLoginCode()">${ls.sending ? '발송 중...' : '코드 발송'}</button>
                   `}
                   <button style="background:none; border:none; color:var(--text-sub); font-size:12px; cursor:pointer; padding:4px 0;" onclick="openLoginSheet('initial')">← 다른 방법으로 시작하기</button>
                 </div>
@@ -4022,7 +4114,7 @@
         let skipLogin = false;
         try { skipLogin = !!localStorage.getItem('keongyu_skip_login'); } catch (e) {}
         if (!justLoggedInViaKakao && !state.user.isLoggedIn && !skipLogin) {
-          state.ui.loginSheet = { mode: 'initial', email: '', codeSent: false, sentCode: null, sentAt: 0 };
+          state.ui.loginSheet = { mode: 'initial', email: '', codeSent: false, sentAt: 0, sending: false, verifying: false };
         }
         render();
 

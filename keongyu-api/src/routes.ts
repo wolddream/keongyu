@@ -372,6 +372,37 @@ export async function handlePutRouteSteps(request: Request, env: Env, routeId: s
 	return json({ ok: true });
 }
 
+// Updates route-level metadata only (title/purpose/distance/time/budget/tags/is_public) - steps
+// go through PUT .../steps instead (see its comment for why that's a whole-array replace).
+export async function handlePatchRoute(request: Request, env: Env, routeId: string): Promise<Response> {
+	const body = (await request.json()) as {
+		title?: string;
+		purpose?: string;
+		distance?: string;
+		time?: string;
+		budget?: string;
+		tags?: string[];
+		is_public?: boolean;
+	};
+
+	const sets: string[] = [];
+	const values: unknown[] = [];
+	if (body.title !== undefined) { sets.push("title = ?"); values.push(body.title); }
+	if (body.purpose !== undefined) { sets.push("purpose = ?"); values.push(body.purpose); }
+	if (body.distance !== undefined) { sets.push("distance = ?"); values.push(body.distance); }
+	if (body.time !== undefined) { sets.push("time = ?"); values.push(body.time); }
+	if (body.budget !== undefined) { sets.push("budget = ?"); values.push(body.budget); }
+	if (body.tags !== undefined) { sets.push("tags_json = ?"); values.push(JSON.stringify(body.tags)); }
+	if (body.is_public !== undefined) { sets.push("is_public = ?"); values.push(body.is_public ? 1 : 0); }
+
+	if (sets.length === 0) return json({ error: "no fields to update" }, 400);
+
+	values.push(routeId);
+	await env.DB.prepare(`UPDATE routes SET ${sets.join(", ")} WHERE id = ?`).bind(...values).run();
+
+	return json({ ok: true });
+}
+
 export async function handleGetImage(env: Env, key: string): Promise<Response> {
 	const obj = await env.IMAGES.get(key);
 	if (!obj) return new Response("Not found", { status: 404 });
