@@ -503,6 +503,239 @@
       // ==========================================
       // 0. Constants & Utilities
       // ==========================================
+      const API_BASE = 'https://keongyu-api.wolddream.workers.dev';
+
+      // Resolves a step/route photo to a displayable <img src>: server-stored photos come back as
+      // bare R2 keys (e.g. "routes/r_x/step0/img_y"), locally-created-but-not-yet-synced ones are
+      // still data: URLs. Both need to render the same way in the UI.
+      function resolveImageUrl(value) {
+        if (!value) return null;
+        if (value.startsWith('data:') || value.startsWith('http')) return value;
+        return `${API_BASE}/api/images/${value}`;
+      }
+
+      // Fire-and-forget sync to the Worker API: local state is already updated and rendered by the
+      // time this is called (optimistic-update pattern used throughout this app), so a failure here
+      // only means the change didn't reach the server yet - it stays visible locally either way.
+      function apiSync(path, options) {
+        return fetch(`${API_BASE}${path}`, options).catch((err) => {
+          console.warn('[API sync failed]', path, err);
+        });
+      }
+
+      function apiJson(path, method, body) {
+        return apiSync(path, {
+          method,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      }
+
+      // Maps a GET /api/routes row (see keongyu-api/src/routes.ts routeRowToClient) onto this
+      // app's route shape. Deliberately not run through withCollabDefaults() - that helper always
+      // forces isCollaborative back to false, which is right for a brand-new local route but wrong
+      // for an existing server route that may already be collaborative.
+      function mapServerRouteToClient(sr) {
+        return {
+          id: sr.id,
+          title: sr.title,
+          purpose: sr.purpose,
+          tags: sr.tags || [],
+          distance: sr.distance,
+          time: sr.time,
+          budget: sr.budget,
+          likes: sr.likes,
+          creator: sr.creator,
+          isPublic: sr.isPublic,
+          isMine: sr.creator_id === state.user.id,
+          image: sr.image,
+          steps: sr.steps || [],
+          comments: [],
+          isCollaborative: !!sr.isCollaborative,
+          participants: [],
+          pendingInvites: [],
+          editLog: [],
+          fromServer: true,
+        };
+      }
+
+      // Pulls the shared server route list and merges it in front of whatever isn't server-backed
+      // yet (the DEFAULT_ROUTES demo seed, plus any route created locally whose sync hasn't
+      // succeeded). Re-running this replaces the previous server batch instead of accumulating
+      // duplicates, so it's safe to call on every load.
+      async function syncRoutesFromServer() {
+        try {
+          const res = await fetch(`${API_BASE}/api/routes`);
+          if (!res.ok) return;
+          const data = await res.json();
+          const serverRoutes = (data.routes || []).map(mapServerRouteToClient);
+          const localOnly = state.routes.filter((r) => !r.fromServer);
+          state.routes = [...serverRoutes, ...localOnly];
+          saveState();
+          render();
+        } catch (err) {
+          console.warn('[routes sync failed]', err);
+        }
+      }
+
+      async function syncNotificationsFromServer() {
+        if (!state.user.isLoggedIn) return;
+        try {
+          const res = await fetch(`${API_BASE}/api/notifications?user_id=${encodeURIComponent(state.user.id)}`);
+          if (!res.ok) return;
+          const data = await res.json();
+          state.notifications = (data.notifications || []).map((n) => ({
+            id: n.id,
+            creator: n.creator,
+            title: n.title,
+            routeId: n.route_id,
+            time: n.created_at,
+            read: !!n.read,
+            type: 'new_route',
+          }));
+          saveState();
+          render();
+        } catch (err) {
+          console.warn('[notifications sync failed]', err);
+        }
+      }
+
+      async function syncSubscriptionsFromServer() {
+        if (!state.user.isLoggedIn) return;
+        try {
+          const res = await fetch(`${API_BASE}/api/subscriptions?user_id=${encodeURIComponent(state.user.id)}`);
+          if (!res.ok) return;
+          const data = await res.json();
+          state.subscriptions = data.subscriptions || {};
+          saveState();
+          render();
+        } catch (err) {
+          console.warn('[subscriptions sync failed]', err);
+        }
+      }
+
+      async function syncProfileFromServer() {
+        if (!state.user.isLoggedIn) return;
+        try {
+          const res = await fetch(`${API_BASE}/api/users/${encodeURIComponent(state.user.id)}`);
+          if (!res.ok) return;
+          const data = await res.json();
+          const p = data.profile || {};
+          if (typeof data.points === 'number') state.user.points = data.points;
+          if (p.custom) state.custom = p.custom;
+          if (p.challenge) state.challenge = p.challenge;
+          if (typeof p.invites === 'number') state.user.invites = p.invites;
+          if (typeof p.stickersEarned === 'number') state.user.stickersEarned = p.stickersEarned;
+          if (Array.isArray(p.completedRoutes)) state.user.completedRoutes = p.completedRoutes;
+          saveState();
+          render();
+        } catch (err) {
+          console.warn('[profile sync failed]', err);
+        }
+      }
+
+      function syncPointsDelta(delta, reason) {
+        if (!state.user.isLoggedIn || !delta) return;
+        apiJson(`/api/users/${encodeURIComponent(state.user.id)}`, 'PATCH', { points_delta: delta, points_reason: reason });
+      }
+
+      // Pushes the whole cosmetics/challenge/invites bundle as one JSON blob (see
+      // keongyu-api/src/profile.ts) - simpler than tracking which slice changed, and nothing
+      // server-side needs to read into this blob's structure.
+      function syncProfileToServer() {
+        if (!state.user.isLoggedIn) return;
+        apiJson(`/api/users/${encodeURIComponent(state.user.id)}`, 'PATCH', {
+          name: state.user.name,
+          avatar: state.user.avatar,
+          profile: {
+            custom: state.custom,
+            challenge: state.challenge,
+            invites: state.user.invites,
+            stickersEarned: state.user.stickersEarned,
+            completedRoutes: state.user.completedRoutes,
+          },
+        });
+      }
+
+      // Replaces the whole steps list server-side after any local add/update/delete-step mutation -
+      // see keongyu-api's PUT /api/routes/:id/steps for why (a full-array replace instead of trying
+      // to keep server-side step_order in sync with individual inserts/deletes).
+      function syncStepsToServer(route, action) {
+        apiJson(`/api/routes/${encodeURIComponent(route.id)}/steps`, 'PUT', {
+          steps: route.steps,
+          user_id: state.user.id,
+          user_name: state.user.name,
+          avatar: getAvatarDisplay(state.user.name),
+          action,
+        });
+      }
+
+      async function dataUrlToBlob(dataUrl) {
+        const res = await fetch(dataUrl);
+        return res.blob();
+      }
+
+      // POSTs a just-created local route to the server (photos included) and, on success, swaps
+      // the optimistic local entry for the server-confirmed one - mainly so its photos become R2
+      // keys like every other route instead of staying as inline base64.
+      async function syncNewRouteToServer(localRoute, orderedSteps) {
+        try {
+          const form = new FormData();
+          form.set('title', localRoute.title);
+          form.set('purpose', localRoute.purpose || '');
+          form.set('distance', localRoute.distance || '');
+          form.set('time', localRoute.time || '');
+          form.set('budget', localRoute.budget || '');
+          form.set('creator_id', state.user.id);
+          form.set('creator_name', state.user.name);
+          form.set('creator_avatar', state.user.avatar || '');
+          form.set('tags', JSON.stringify(localRoute.tags || []));
+          form.set('is_public', localRoute.isPublic ? '1' : '0');
+          form.set(
+            'steps_meta',
+            JSON.stringify(
+              orderedSteps.map((s) => ({
+                type: s.type,
+                name: s.name,
+                address: s.address,
+                cost: s.cost,
+                memo: s.memo,
+                category: s.category,
+                emoji: s.emoji,
+                subtitle: s.subtitle,
+                arrivalTime: s.arrivalTime,
+                stayDuration: s.stayDuration,
+                transitType: s.transitType,
+                distanceFromPrev: s.distanceFromPrev,
+                photoCaption: s.photoCaption,
+                gps: s.gps,
+              }))
+            )
+          );
+
+          for (let i = 0; i < orderedSteps.length; i++) {
+            const images = orderedSteps[i].images || [];
+            for (let j = 0; j < images.length; j++) {
+              form.append(`step${i}_photo${j}`, await dataUrlToBlob(images[j]), `photo${j}.jpg`);
+            }
+          }
+
+          const res = await fetch(`${API_BASE}/api/routes`, { method: 'POST', body: form });
+          if (!res.ok) throw new Error('route create failed: ' + res.status);
+          const serverRoute = await res.json();
+
+          const idx = state.routes.findIndex((r) => r.id === localRoute.id);
+          if (idx !== -1) {
+            state.routes[idx] = { ...state.routes[idx], ...mapServerRouteToClient(serverRoute), isMine: true };
+            saveState();
+            render();
+          }
+        } catch (err) {
+          console.warn('[route create sync failed]', err);
+          showToast('서버 저장에 실패했어요. 이 기기에만 저장된 상태예요.');
+        }
+      }
+
       const STORAGE_KEY = 'keongyu_v1';
       const AVATAR_MAP = { bear: '🐻', cat: '🐱', puppy: '🐶', rabbit: '🐰', fox: '🦊', panda: '🐼', tiger: '🐯', koala: '🐨', hamster: '🐹', lion: '🦁' };
       const STICKER_MAP = { heart: '❤️', star: '⭐', fire: '🔥', clover: '🍀', sparkle: '✨', crown: '👑' };
@@ -573,6 +806,8 @@
         saveState();
         showToast(`${channel}로 초대장을 보냈어요! ⭐+25 적립`);
         render();
+        syncProfileToServer();
+        syncPointsDelta(25, `초대: ${channel}`);
       };
 
       // ==========================================
@@ -972,7 +1207,7 @@
       function renderRouteThumb(route, heightPx) {
         const openAttr = `onclick="startFollowRoute('${route.id}')"`;
         if (route.image) {
-          return `<img class="card-img" style="height:${heightPx}px; cursor:pointer;" src="${esc(route.image)}" alt="${esc(route.title)}" ${openAttr} />`;
+          return `<img class="card-img" style="height:${heightPx}px; cursor:pointer;" src="${esc(resolveImageUrl(route.image))}" alt="${esc(route.title)}" ${openAttr} />`;
         }
         const v = PURPOSE_VISUAL[route.purpose] || { emoji: '📍', gradient: 'linear-gradient(135deg, #F0F0EE, #E0E0DC)' };
         return `<div class="card-img" style="height:${heightPx}px; cursor:pointer; background:${v.gradient}; display:flex; align-items:center; justify-content:center; font-size:${Math.round(heightPx * 0.4)}px;" ${openAttr}>${v.emoji}</div>`;
@@ -1047,6 +1282,7 @@
         state.user.likedRoutes.push(routeId);
         saveState();
         render();
+        apiJson(`/api/routes/${encodeURIComponent(routeId)}/like`, 'POST', { user_id: state.user.id });
       };
 
       // 마이루트: 내 루트 공개/비공개 전환
@@ -1110,6 +1346,7 @@
         showToast(`${creator}님의 알림을 [${textMap[notifType]}]으로 설정했어요!`);
         saveState();
         render();
+        apiJson('/api/subscriptions', 'POST', { user_id: state.user.id, creator, notif: notifType });
       };
 
       window.unsubscribeFromSheet = function() {
@@ -1117,6 +1354,7 @@
         if (creator && state.subscriptions[creator]) {
           delete state.subscriptions[creator];
           showToast(`${creator}님의 구독을 취소했습니다.`);
+          apiSync(`/api/subscriptions?user_id=${encodeURIComponent(state.user.id)}&creator=${encodeURIComponent(creator)}`, { method: 'DELETE' });
         }
         state.ui.bottomSheet = null;
         state.ui.notifSheetCreator = null;
@@ -1134,6 +1372,7 @@
         saveState();
         showToast('모든 알림을 읽음 처리했습니다.');
         render();
+        apiJson('/api/notifications/read-all', 'POST', { user_id: state.user.id });
       };
 
       window.clickNotifItem = function(notifId, routeId) {
@@ -1227,6 +1466,7 @@
           ? '링크가 복사됐어요! 인스타그램에서 붙여넣기 해주세요 📷 ⭐+8 적립'
           : `[${channel}] 공유 완료! ⭐+8 별사탕 적립`);
         render();
+        syncPointsDelta(8, `공유: ${channel}`);
       };
 
       window.openUploadSheet = function() {
@@ -1665,6 +1905,8 @@
         saveState();
         showToast('루트가 성공적으로 등록되었습니다! ⭐+15 적립');
         render();
+        syncNewRouteToServer(newRoute, orderedSteps);
+        syncPointsDelta(15, '루트 등록');
       };
 
       // ==========================================
@@ -1716,6 +1958,7 @@
           saveState();
           showToast('GPS 인증을 취소했어요.');
           render();
+          apiJson(`/api/routes/${encodeURIComponent(routeId)}/checkin`, 'POST', { user_id: state.user.id, user_name: state.user.name, step_index: stepIdx });
           return;
         }
         state.user.followCheckins[key] = true;
@@ -1729,6 +1972,7 @@
         saveState();
         showToast('스텝 GPS 인증 성공! ⭐+5 별사탕 적립');
         render();
+        apiJson(`/api/routes/${encodeURIComponent(routeId)}/checkin`, 'POST', { user_id: state.user.id, user_name: state.user.name, step_index: stepIdx });
       };
 
       // Demo-only: simulate a fellow participant checking in at a given step.
@@ -1794,6 +2038,8 @@
         state.ui.bottomSheet = 'finishSummary';
         saveState();
         render();
+        syncProfileToServer();
+        syncPointsDelta(earned, '루트 완주 인증');
       };
 
       // ==========================================
@@ -1825,6 +2071,7 @@
         showToast(`${category === 'theme' ? '테마' : category === 'avatar' ? '아바타' : '스티커'}가 적용되었습니다! ✨`);
         saveState();
         render();
+        syncProfileToServer();
       };
 
       window.buyItem = function(category, key, cost) {
@@ -1838,6 +2085,8 @@
         showToast(`구매 완료 및 장착되었습니다! ⭐-${cost}`);
         saveState();
         render();
+        syncProfileToServer();
+        syncPointsDelta(-cost, `상점 구매: ${category}/${key}`);
       };
 
       window.giftItem = function(category, key, cost) {
@@ -1849,6 +2098,7 @@
         saveState();
         const link = `keongyu.app/gift/${category}_${key}?from=${encodeURIComponent(state.user.name)}`;
         copyText(link, '선물 링크가 복사됐어요! 친구에게 전달해보세요 🎁', 0);
+        syncPointsDelta(-cost, `선물하기: ${category}/${key}`);
       };
 
       window.chargePoints = function(amount, won) {
@@ -1856,6 +2106,7 @@
         saveState();
         showToast(`${won} 결제 완료! 별사탕 ${amount}개가 충전되었습니다. ⭐`);
         render();
+        syncPointsDelta(amount, `충전: ${won}`);
       };
 
       // 충전소: 팩 + 결제수단 선택 후 "결제하기"로 확정하는 2단계 플로우
@@ -1902,6 +2153,7 @@
         saveState();
         showToast(`🎁 미션 달성! ${mission.label} 보상을 받았어요.`);
         render();
+        syncProfileToServer();
       };
 
       // 주간 챌린지: 오늘 인증 버튼 + 3/3 달성 시 랜덤 스티커 보상
@@ -1916,6 +2168,7 @@
         saveState();
         showToast('오늘 인증 완료! +1');
         render();
+        syncProfileToServer();
       };
 
       window.claimChallengeReward = function() {
@@ -1927,6 +2180,7 @@
         saveState();
         showToast(`🎁 랜덤 스티커 ${STICKER_MAP[pick]} 획득!`);
         render();
+        syncProfileToServer();
       };
 
       // ==========================================
@@ -2056,6 +2310,7 @@
         saveState();
         render();
         showToast('수정됐어요 ✏️');
+        syncStepsToServer(route, `수정: ${newData.name}`);
       };
 
       window.deleteStep = function(routeId, stepIdx) {
@@ -2076,6 +2331,7 @@
         saveState();
         render();
         showToast('스텝이 삭제됐어요 🗑️');
+        syncStepsToServer(route, `삭제: ${removed.name}`);
       };
 
       window.addStep = function(routeId, afterIdx, newStep) {
@@ -2086,6 +2342,7 @@
         route.editLog.unshift({ user: state.user.name, avatar: getAvatarDisplay(state.user.name), action: `추가: ${newStep.name}`, time: '방금' });
         saveState();
         render();
+        syncStepsToServer(route, `추가: ${newStep.name}`);
       };
 
       window.openCollabEditSheet = function(routeId, stepIndex) {
@@ -2656,7 +2913,7 @@
                           <div style="background:#FFF; border-radius:18px; padding:14px; border:1px solid var(--border); box-shadow:0 2px 8px rgba(0,0,0,0.03); display:flex; gap:12px;">
                             ${step.images && step.images.length ? `
                               <div style="position:relative; width:56px; height:56px; flex-shrink:0; cursor:pointer;" onclick="openStepPhotoLightbox('${route.id}', ${idx}, 0)">
-                                <img src="${esc(step.images[0])}" alt="${esc(step.name)}" style="width:100%; height:100%; border-radius:14px; object-fit:cover;" />
+                                <img src="${esc(resolveImageUrl(step.images[0]))}" alt="${esc(step.name)}" style="width:100%; height:100%; border-radius:14px; object-fit:cover;" />
                                 ${step.images.length > 1 ? `<div style="position:absolute; bottom:2px; right:2px; background:rgba(0,0,0,0.6); color:#FFF; font-size:9px; font-weight:800; padding:1px 5px; border-radius:8px;">+${step.images.length - 1}</div>` : ''}
                               </div>
                             ` : `
@@ -2761,7 +3018,7 @@
                   <button class="icon-btn" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); background:rgba(255,255,255,0.15); border:none; color:#FFF;" onclick="event.stopPropagation(); lightboxPhotoNav(-1)">‹</button>
                   <button class="icon-btn" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:rgba(255,255,255,0.15); border:none; color:#FFF;" onclick="event.stopPropagation(); lightboxPhotoNav(1)">›</button>
                 ` : ''}
-                <img src="${esc(lbPhotos[lbIdx])}" alt="${esc(lbStep.name)}" style="max-width:92%; max-height:78%; border-radius:12px; object-fit:contain;" onclick="event.stopPropagation()" />
+                <img src="${esc(resolveImageUrl(lbPhotos[lbIdx]))}" alt="${esc(lbStep.name)}" style="max-width:92%; max-height:78%; border-radius:12px; object-fit:contain;" onclick="event.stopPropagation()" />
                 ${lbPhotos.length > 1 ? `
                   <div style="position:absolute; bottom:24px; left:0; right:0; display:flex; justify-content:center; gap:6px;">
                     ${lbPhotos.map((_, i) => `<div style="width:${i === lbIdx ? '18px' : '6px'}; height:6px; border-radius:3px; background:${i === lbIdx ? '#FFF' : 'rgba(255,255,255,0.4)'}; transition:width 0.2s;"></div>`).join('')}
@@ -3525,6 +3782,11 @@
           state.ui.loginSheet = { mode: 'initial', email: '', codeSent: false, sentCode: null, sentAt: 0 };
         }
         render();
+
+        syncRoutesFromServer();
+        syncNotificationsFromServer();
+        syncSubscriptionsFromServer();
+        syncProfileFromServer();
       });
     </script>
   </body>
