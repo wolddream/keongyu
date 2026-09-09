@@ -2841,8 +2841,14 @@
         // opens and consumes it (history.back()) if the app itself closes the overlay without the
         // back button being pressed - keeps our flag and the actual history stack in sync either
         // way. The corresponding popstate handler is registered once, below.
+        // The pushed URL must actually change (the '#o' suffix) rather than repeating the current
+        // URL - some in-app/WebView back stacks (Kakao's in-app browser included) only recognize a
+        // pushState entry as real, back-button-interceptable history when the URL differs from the
+        // previous entry. With an unchanged URL the entry can be silently skipped by the hardware
+        // back button, which fell straight through to exiting the app from a page like the route
+        // detail overlay instead of firing our popstate handler below.
         if (anyOverlayOpen && !_overlayHistoryPushed) {
-          history.pushState({ keongyuOverlay: true }, '');
+          history.pushState({ keongyuOverlay: true }, '', '#o');
           _overlayHistoryPushed = true;
         } else if (!anyOverlayOpen && _overlayHistoryPushed) {
           _overlayHistoryPushed = false;
@@ -2933,6 +2939,9 @@
               html += `
                 <div class="filter-chip sub-chip ${state.filter.nearby ? 'active' : ''}" onclick="toggleNearbyFilter()">
                   ${state.ui.nearbyLoading ? '⏳ 위치 확인 중' : '📍 근처'}
+                </div>
+                <div class="filter-chip sub-chip ${state.filter.purpose === '헤어샵' ? 'active' : ''}" onclick="setPurposeFilter('헤어샵')">
+                  💇 헤어샵
                 </div>
               `;
             }
@@ -3743,8 +3752,8 @@
                   ${se.photos.length > 0 ? `
                     <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px;">
                       ${se.photos.map((photo, pIdx) => `
-                        <div style="position:relative; border-radius:12px; overflow:hidden; aspect-ratio:1;">
-                          <img src="${esc(photo)}" style="width:100%; height:100%; object-fit:cover;" />
+                        <div style="position:relative; border-radius:12px; overflow:hidden; aspect-ratio:1; background:#EFEDE9; display:flex; align-items:center; justify-content:center;">
+                          <img src="${esc(photo)}" style="width:100%; height:100%; object-fit:contain;" />
                           <button class="icon-btn" style="position:absolute; top:4px; right:4px; width:22px; height:22px; font-size:11px;" onclick="clearStopPhoto(${pIdx})">✕</button>
                         </div>
                       `).join('')}

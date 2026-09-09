@@ -16,6 +16,7 @@ interface PortOnePayment {
 	status: string;
 	storeId: string;
 	amount: { total: number };
+	customer?: { id?: string };
 }
 
 export async function handleVerifyPayment(request: Request, env: Env): Promise<Response> {
@@ -24,7 +25,11 @@ export async function handleVerifyPayment(request: Request, env: Env): Promise<R
 
 	// Idempotent: if this payment was already recorded (e.g. the client retried after a network
 	// hiccup on the first response), just report the current balance instead of crediting twice.
-	const already = await env.DB.prepare(`SELECT id FROM payments WHERE id = ?`).bind(payment_id).first();
+	// Must also recheck the payment's own user_id here, the same way the fresh-verification path
+	// below checks payment.customer.id - otherwise anyone who learns an already-processed payment_id
+	// could pair it with an arbitrary user_id and have this branch hand back that user's point
+	// balance (an IDOR leak of another account's balance, even though no points actually move).
+	const already = await env.DB.prepare(`SELECT id FROM payments WHERE id = ? AND user_id = ?`).bind(payment_id, user_id).first();
 	if (already) {
 		const row = await env.DB.prepare(`SELECT points FROM users WHERE id = ?`).bind(user_id).first<{ points: number }>();
 		return json({ ok: true, points: row?.points ?? 0, already_processed: true });
@@ -38,6 +43,12 @@ export async function handleVerifyPayment(request: Request, env: Env): Promise<R
 
 	if (payment.storeId !== PORTONE_STORE_ID) return json({ error: "결제 정보가 올바르지 않아요." }, 400);
 	if (payment.status !== "PAID") return json({ error: `결제가 완료되지 않았어요. (상태: ${payment.status})` }, 400);
+	// The client sets customer.customerId to its own user id when opening the PortOne checkout
+	// (index.html confirmCharge()), so PortOne's record of who actually paid is a check we can run
+	// independently of anything the client tells us here. Without this, anyone who learns another
+	// user's still-unclaimed payment_id (already PAID, e.g. leaked via a redirect/referrer) could
+	// call this endpoint with their own user_id and claim someone else's payment as their own points.
+	if (payment.customer?.id !== user_id) return json({ error: "결제 정보가 올바르지 않아요." }, 400);
 
 	const pack = CHARGE_PACKS.find((p) => p.won === payment.amount.total);
 	if (!pack) return json({ error: "결제 금액이 충전 팩과 일치하지 않아요." }, 400);
