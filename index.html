@@ -187,6 +187,10 @@
       .overlay-inner {
         width: 100%; max-width: 440px; height: 100dvh; display: flex; flex-direction: column; background: var(--bg);
       }
+      .photo-lightbox {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.92);
+        z-index: 300; display: flex; align-items: center; justify-content: center;
+      }
       .toast-box {
         position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%);
         background: rgba(25, 31, 40, 0.92); color: white; padding: 10px 18px;
@@ -541,7 +545,27 @@
 
       window.sendInvite = function(channel) {
         const link = `https://keongyu.app/invite?code=USER_${state.user.invites}`;
-        if (channel === '링크' && navigator.clipboard && navigator.clipboard.writeText) {
+        if (channel === '카카오톡') {
+          if (!window.Kakao || !Kakao.isInitialized() || !Kakao.Share || typeof Kakao.Share.sendDefault !== 'function') {
+            showToast('카카오톡 공유를 사용할 수 없어요. 링크 복사를 이용해주세요.');
+            return;
+          }
+          try {
+            Kakao.Share.sendDefault({
+              objectType: 'feed',
+              content: {
+                title: '경유(KEONGYU)에서 함께 루트를 만들어봐요!',
+                description: '친구가 나를 경유에 초대했어요. 지금 가입하면 별사탕 +20개!',
+                imageUrl: 'https://keongyu.app/og-image.png',
+                link: { mobileWebUrl: link, webUrl: link }
+              },
+              buttons: [{ title: '초대 수락하고 시작하기', link: { mobileWebUrl: link, webUrl: link } }]
+            });
+          } catch (err) {
+            showToast('카카오톡 공유창을 여는 데 실패했어요.');
+            return;
+          }
+        } else if (channel === '링크' && navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(link).catch(() => {});
         }
         state.user.invites += 1;
@@ -812,7 +836,8 @@
             loginSheet: null, // { mode:'initial'|'email', email, codeSent, sentCode, sentAt } or null
             profileSheet: false,
             routeBuilder: null, // { title, purpose, distance, time, budget, steps: [] } - 새 루트 만들기 진행 중 상태
-            stopEditor: null // { editingIndex, category, name, ... } - 경유지 추가/수정 폼 상태
+            stopEditor: null, // { editingIndex, category, name, ... } - 경유지 추가/수정 폼 상태
+            photoLightbox: null // { routeId, stepIdx, photoIdx } - 따라가기에서 경유지 사진 확대보기
           },
           tempImages: []
         };
@@ -838,6 +863,10 @@
         if (state.ui.charge === undefined) state.ui.charge = { pack: null, method: null };
         if (state.ui.routeBuilder === undefined) state.ui.routeBuilder = null;
         if (state.ui.stopEditor === undefined) state.ui.stopEditor = null;
+        if (state.ui.stopEditor && !Array.isArray(state.ui.stopEditor.photos)) {
+          state.ui.stopEditor.photos = state.ui.stopEditor.photoUrl ? [state.ui.stopEditor.photoUrl] : [];
+        }
+        if (state.ui.photoLightbox === undefined) state.ui.photoLightbox = null;
         if (state.challenge.todayCheck === undefined) state.challenge.todayCheck = null;
         if (state.challenge.completed === undefined) state.challenge.completed = false;
         state.routes.forEach(r => {
@@ -845,6 +874,10 @@
           if (!r.participants) r.participants = [];
           if (!r.pendingInvites) r.pendingInvites = [];
           if (!r.editLog) r.editLog = [];
+          // Migrate single step.image (pre multi-photo support) -> step.images array.
+          (r.steps || []).forEach(s => {
+            if (!Array.isArray(s.images)) s.images = s.image ? [s.image] : [];
+          });
         });
         // Migrate followCheckins from "routeId_step" (shared) to "routeId_step_user" (per-participant).
         const oldCheckins = state.user.followCheckins || {};
@@ -1159,6 +1192,11 @@
       };
 
       window.openUploadSheet = function() {
+        if (!state.user.isLoggedIn) {
+          showToast('로그인 후 루트를 등록할 수 있어요 🔐');
+          openLoginSheet('initial');
+          return;
+        }
         state.ui.bottomSheet = 'upload';
         state.ui.routeBuilder = { title: '', purpose: ROUTE_PURPOSES[0], distance: '', time: '', budget: '', steps: [] };
         state.ui.stopEditor = null;
@@ -1185,6 +1223,7 @@
       // Upload method A: Photos
       const IMAGE_MAX_DIM = 800;
       const IMAGE_QUALITY = 0.7;
+      const MAX_STOP_PHOTOS = 6;
 
       // Downscales a picked file to at most IMAGE_MAX_DIM per side and re-encodes as JPEG
       // so localStorage doesn't fill up with full-resolution phone photos.
@@ -1256,7 +1295,7 @@
           address: '',
           description: '',
           cost: '',
-          photoUrl: '',
+          photos: [],
           photoCaption: '',
           gps: null,
           gpsLoading: false,
@@ -1303,7 +1342,7 @@
             address: step.address || '',
             description: step.memo || '',
             cost: step.cost && step.cost !== '0원' ? step.cost.replace(/[^0-9]/g, '') : '',
-            photoUrl: step.image || '',
+            photos: step.images ? step.images.slice() : [],
             photoCaption: step.photoCaption || '',
             gps: step.gps || null
           };
@@ -1378,9 +1417,17 @@
         const file = e.target.files && e.target.files[0];
         e.target.value = '';
         if (!file || !state.ui.stopEditor) return;
+        if (state.ui.stopEditor.photos.length >= MAX_STOP_PHOTOS) {
+          showToast(`사진은 최대 ${MAX_STOP_PHOTOS}장까지 등록할 수 있어요.`);
+          return;
+        }
         resizeImageFile(file).then(url => {
           if (!url || !state.ui.stopEditor) return;
-          state.ui.stopEditor.photoUrl = url;
+          if (state.ui.stopEditor.photos.length >= MAX_STOP_PHOTOS) {
+            showToast(`사진은 최대 ${MAX_STOP_PHOTOS}장까지 등록할 수 있어요.`);
+            return;
+          }
+          state.ui.stopEditor.photos.push(url);
           if (!state.ui.stopEditor.photoCaption) {
             state.ui.stopEditor.photoCaption = `${file.name.replace(/\.[^/.]+$/, '')} 현장 사진`;
           }
@@ -1388,9 +1435,9 @@
         });
       };
 
-      window.clearStopPhoto = function() {
+      window.clearStopPhoto = function(index) {
         if (!state.ui.stopEditor) return;
-        state.ui.stopEditor.photoUrl = '';
+        state.ui.stopEditor.photos.splice(index, 1);
         render();
       };
 
@@ -1404,6 +1451,10 @@
       window.startStepCamera = async function() {
         const editor = state.ui.stopEditor;
         if (!editor) return;
+        if (editor.photos.length >= MAX_STOP_PHOTOS) {
+          showToast(`사진은 최대 ${MAX_STOP_PHOTOS}장까지 등록할 수 있어요.`);
+          return;
+        }
         editor.cameraOpen = true;
         editor.cameraError = null;
         render();
@@ -1449,11 +1500,15 @@
           showToast('카메라가 아직 준비되지 않았어요. 잠시 후 다시 시도해주세요.');
           return;
         }
+        if (editor.photos.length >= MAX_STOP_PHOTOS) {
+          showToast(`사진은 최대 ${MAX_STOP_PHOTOS}장까지 등록할 수 있어요.`);
+          return;
+        }
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-        editor.photoUrl = canvas.toDataURL('image/jpeg', IMAGE_QUALITY);
+        editor.photos.push(canvas.toDataURL('image/jpeg', IMAGE_QUALITY));
         if (!editor.photoCaption) editor.photoCaption = '카메라로 현장 직접 촬영한 사진';
         stopStepCameraStream();
         editor.cameraOpen = false;
@@ -1497,7 +1552,7 @@
           address: address || (editor.gps ? `GPS 좌표 (${editor.gps.formattedText})` : ''),
           memo: description || '',
           cost: costNum > 0 ? `${costNum.toLocaleString()}원` : '0원',
-          image: editor.photoUrl || null,
+          images: editor.photos.slice(),
           photoCaption: photoCaption || '',
           gps: editor.gps || null
         };
@@ -1544,7 +1599,7 @@
           type: i === 0 ? 'START' : (i === builder.steps.length - 1 ? '도착' : '경유')
         }));
         const budgetNum = budgetRaw ? Number(budgetRaw.replace(/[^0-9]/g, '')) : 0;
-        const coverImage = orderedSteps.find(s => s.image)?.image || null;
+        const coverImage = orderedSteps.find(s => s.images && s.images.length)?.images[0] || null;
 
         const newRoute = {
           id: 'r_' + Date.now(),
@@ -1586,6 +1641,26 @@
       window.closeFollowRoute = function() {
         state.ui.followRouteId = null;
         saveState();
+        render();
+      };
+
+      window.openStepPhotoLightbox = function(routeId, stepIdx, photoIdx) {
+        state.ui.photoLightbox = { routeId, stepIdx, photoIdx: photoIdx || 0 };
+        render();
+      };
+
+      window.closePhotoLightbox = function() {
+        state.ui.photoLightbox = null;
+        render();
+      };
+
+      window.lightboxPhotoNav = function(dir) {
+        const lb = state.ui.photoLightbox;
+        if (!lb) return;
+        const route = state.routes.find(r => r.id === lb.routeId);
+        const step = route && route.steps[lb.stepIdx];
+        if (!step || !step.images || step.images.length < 2) return;
+        lb.photoIdx = (lb.photoIdx + dir + step.images.length) % step.images.length;
         render();
       };
 
@@ -1680,6 +1755,7 @@
       window.openChargeModal = function() {
         state.ui.bottomSheet = 'charge';
         state.ui.charge = { pack: null, method: null };
+        state.ui.profileSheet = false;
         render();
       };
 
@@ -2028,6 +2104,14 @@
         const activeId = activeEl ? activeEl.id : null;
         const selStart = activeEl && ('selectionStart' in activeEl) ? activeEl.selectionStart : null;
         const selEnd = activeEl && ('selectionEnd' in activeEl) ? activeEl.selectionEnd : null;
+
+        // 1b. Preserve scroll position of the open sheet/overlay's scrollable regions.
+        // root.innerHTML replacement below always recreates the DOM, which silently resets
+        // scrollTop to 0 on every one of them - felt as the screen "jumping" back up on every
+        // icon tap/toggle inside a sheet. Captured/restored in DOM order, which stays stable
+        // across a render() since the same state produces the same conditional structure.
+        const SCROLL_PRESERVE_SELECTOR = '.bottom-sheet, .route-timeline-scroll, .notif-list-scroll';
+        const savedScrollTops = Array.from(document.querySelectorAll(SCROLL_PRESERVE_SELECTOR)).map(el => el.scrollTop);
 
         // 2. Set theme color
         const themeColor = THEME_MAP[state.custom.equipped.theme] || '#8B6CFF';
@@ -2502,7 +2586,7 @@
                 </div>
 
                 <!-- Scrollable Timeline -->
-                <div style="padding:18px 16px 4px; flex:1; overflow-y:auto; overscroll-behavior:contain;">
+                <div class="route-timeline-scroll" style="padding:18px 16px 4px; flex:1; overflow-y:auto; overscroll-behavior:contain;">
                   ${route.steps.map((step, idx) => {
                     const sv = getStepVisual(step.type);
                     const isLast = idx === totalSteps - 1;
@@ -2518,8 +2602,11 @@
                         <!-- Step card -->
                         <div style="flex:1; min-width:0; padding-bottom:18px;">
                           <div style="background:#FFF; border-radius:18px; padding:14px; border:1px solid var(--border); box-shadow:0 2px 8px rgba(0,0,0,0.03); display:flex; gap:12px;">
-                            ${step.image ? `
-                              <img src="${esc(step.image)}" alt="${esc(step.name)}" style="width:56px; height:56px; border-radius:14px; object-fit:cover; flex-shrink:0;" />
+                            ${step.images && step.images.length ? `
+                              <div style="position:relative; width:56px; height:56px; flex-shrink:0; cursor:pointer;" onclick="openStepPhotoLightbox('${route.id}', ${idx}, 0)">
+                                <img src="${esc(step.images[0])}" alt="${esc(step.name)}" style="width:100%; height:100%; border-radius:14px; object-fit:cover;" />
+                                ${step.images.length > 1 ? `<div style="position:absolute; bottom:2px; right:2px; background:rgba(0,0,0,0.6); color:#FFF; font-size:9px; font-weight:800; padding:1px 5px; border-radius:8px;">+${step.images.length - 1}</div>` : ''}
+                              </div>
                             ` : `
                               <div style="width:56px; height:56px; border-radius:14px; background:${sv.bg}; color:${sv.color}; display:flex; align-items:center; justify-content:center; font-size:26px; flex-shrink:0;">${sv.emoji}</div>
                             `}
@@ -2604,6 +2691,35 @@
           `;
         }
 
+        // A2. Step Photo Lightbox (경유지 사진 확대보기)
+        if (state.ui.photoLightbox) {
+          const lb = state.ui.photoLightbox;
+          const lbRoute = state.routes.find(r => r.id === lb.routeId);
+          const lbStep = lbRoute && lbRoute.steps[lb.stepIdx];
+          const lbPhotos = (lbStep && lbStep.images) || [];
+          if (lbPhotos.length === 0) {
+            state.ui.photoLightbox = null;
+          } else {
+            const lbIdx = ((lb.photoIdx % lbPhotos.length) + lbPhotos.length) % lbPhotos.length;
+            html += `
+              <div class="photo-lightbox" onclick="closePhotoLightbox()">
+                <button class="icon-btn" style="position:absolute; top:16px; right:16px; background:rgba(255,255,255,0.15); border:none; color:#FFF;" onclick="event.stopPropagation(); closePhotoLightbox()">✕</button>
+                <div style="position:absolute; top:16px; left:16px; color:#FFF; font-size:13px; font-weight:800; background:rgba(0,0,0,0.4); padding:5px 12px; border-radius:14px; max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(lbStep.name)}</div>
+                ${lbPhotos.length > 1 ? `
+                  <button class="icon-btn" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); background:rgba(255,255,255,0.15); border:none; color:#FFF;" onclick="event.stopPropagation(); lightboxPhotoNav(-1)">‹</button>
+                  <button class="icon-btn" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:rgba(255,255,255,0.15); border:none; color:#FFF;" onclick="event.stopPropagation(); lightboxPhotoNav(1)">›</button>
+                ` : ''}
+                <img src="${esc(lbPhotos[lbIdx])}" alt="${esc(lbStep.name)}" style="max-width:92%; max-height:78%; border-radius:12px; object-fit:contain;" onclick="event.stopPropagation()" />
+                ${lbPhotos.length > 1 ? `
+                  <div style="position:absolute; bottom:24px; left:0; right:0; display:flex; justify-content:center; gap:6px;">
+                    ${lbPhotos.map((_, i) => `<div style="width:${i === lbIdx ? '18px' : '6px'}; height:6px; border-radius:3px; background:${i === lbIdx ? '#FFF' : 'rgba(255,255,255,0.4)'}; transition:width 0.2s;"></div>`).join('')}
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }
+        }
+
         // B. Notification Settings Sheet (YouTube Style V3)
         if (state.ui.bottomSheet === 'notifSetting' && state.ui.notifSheetCreator) {
           const creator = state.ui.notifSheetCreator;
@@ -2681,7 +2797,7 @@
                   <button class="cta-btn" style="padding:4px 10px; font-size:11px;" onclick="simulateNewRouteNotif()">🔔 알림 발송</button>
                 </div>
 
-                <div style="display:flex; flex-direction:column; gap:8px; max-height:55vh; overflow-y:auto;">
+                <div class="notif-list-scroll" style="display:flex; flex-direction:column; gap:8px; max-height:55vh; overflow-y:auto;">
                   ${state.notifications.length === 0 ? `
                     <div style="text-align:center; padding:30px; color:var(--text-sub); font-size:13px;">
                       아직 알림이 없어요. 좋아하는 크리에이터를 구독해보세요!
@@ -2820,16 +2936,16 @@
                 </div>
 
                 <div style="padding:12px; border-radius:16px; background:#F8F8F6; border:1px solid var(--border); display:flex; flex-direction:column; gap:8px;">
-                  <div style="font-size:12px; font-weight:900;">📷 경유지 사진 &amp; GPS 위치</div>
+                  <div style="font-size:12px; font-weight:900;">📷 경유지 사진 (${se.photos.length}/${MAX_STOP_PHOTOS}) &amp; GPS 위치</div>
                   <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-                    <button class="cta-btn" style="padding:9px; font-size:12px;" onclick="startStepCamera()">📸 사진 촬영</button>
+                    <button class="cta-btn" style="padding:9px; font-size:12px; opacity:${se.photos.length >= MAX_STOP_PHOTOS ? '0.5' : '1'};" ${se.photos.length >= MAX_STOP_PHOTOS ? 'disabled' : ''} onclick="startStepCamera()">📸 사진 촬영</button>
                     <button class="cta-btn" style="padding:9px; font-size:12px; background:${se.gps ? '#2DD4A0' : '#FFF'}; color:${se.gps ? '#FFF' : 'var(--text)'}; border:1px solid var(--border);" ${se.gpsLoading ? 'disabled' : ''} onclick="getStopEditorGps()">
                       ${se.gpsLoading ? '⏳ 위치 탐색중' : (se.gps ? '✓ GPS 갱신' : '📍 GPS 위치 조회')}
                     </button>
                   </div>
-                  <label class="cta-btn" style="padding:9px; font-size:12px; background:#FFF; color:var(--text); border:1px solid var(--border); text-align:center; cursor:pointer;">
+                  <label class="cta-btn" style="padding:9px; font-size:12px; background:#FFF; color:var(--text); border:1px solid var(--border); text-align:center; cursor:pointer; opacity:${se.photos.length >= MAX_STOP_PHOTOS ? '0.5' : '1'}; pointer-events:${se.photos.length >= MAX_STOP_PHOTOS ? 'none' : 'auto'};">
                     📁 파일 업로드
-                    <input type="file" accept="image/*" style="display:none;" onchange="handleStopFileInput(event)" />
+                    <input type="file" accept="image/*" style="display:none;" onchange="handleStopFileInput(event)" ${se.photos.length >= MAX_STOP_PHOTOS ? 'disabled' : ''} />
                   </label>
 
                   ${se.gps ? `
@@ -2855,10 +2971,14 @@
                     ${se.cameraError ? `<div style="font-size:11px; color:#FF9B9B;">${esc(se.cameraError)}</div>` : ''}
                   ` : ''}
 
-                  ${se.photoUrl ? `
-                    <div style="position:relative; border-radius:12px; overflow:hidden; height:120px;">
-                      <img src="${esc(se.photoUrl)}" style="width:100%; height:100%; object-fit:cover;" />
-                      <button class="icon-btn" style="position:absolute; top:6px; right:6px; width:26px; height:26px; font-size:12px;" onclick="clearStopPhoto()">✕</button>
+                  ${se.photos.length > 0 ? `
+                    <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px;">
+                      ${se.photos.map((photo, pIdx) => `
+                        <div style="position:relative; border-radius:12px; overflow:hidden; aspect-ratio:1;">
+                          <img src="${esc(photo)}" style="width:100%; height:100%; object-fit:cover;" />
+                          <button class="icon-btn" style="position:absolute; top:4px; right:4px; width:22px; height:22px; font-size:11px;" onclick="clearStopPhoto(${pIdx})">✕</button>
+                        </div>
+                      `).join('')}
                     </div>
                     <input type="text" id="stop-form-photo-caption" placeholder="사진 설명" value="${esc(se.photoCaption)}" oninput="state.ui.stopEditor.photoCaption=this.value" style="border:1px solid var(--border); border-radius:10px; padding:8px 10px; font-size:12px;" />
                   ` : ''}
@@ -3285,6 +3405,13 @@
 
         root.innerHTML = html;
 
+        // 3b. Restore the scroll positions captured above (1b).
+        if (savedScrollTops.some(t => t)) {
+          document.querySelectorAll(SCROLL_PRESERVE_SELECTOR).forEach((el, i) => {
+            if (savedScrollTops[i]) el.scrollTop = savedScrollTops[i];
+          });
+        }
+
         // 4b. Reattach step-editor camera stream (innerHTML replacement drops the <video> element's srcObject)
         if (state.ui.stopEditor && state.ui.stopEditor.cameraOpen && window._stepMediaStream) {
           const stepCameraVideo = document.getElementById('step-camera-video');
@@ -3322,7 +3449,9 @@
       document.addEventListener('keydown', e => {
         if (e.key !== 'Escape') return;
         if (state.ui.loginSheet && !state.user.isLoggedIn) return; // 최초 로그인 유도는 Esc로 닫지 않음
-        if (state.ui.stopEditor) {
+        if (state.ui.photoLightbox) {
+          closePhotoLightbox();
+        } else if (state.ui.stopEditor) {
           closeStopEditor();
         } else if (state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.loginSheet || state.ui.profileSheet) {
           closeSheet();
@@ -3344,12 +3473,6 @@
           state.ui.loginSheet = { mode: 'initial', email: '', codeSent: false, sentCode: null, sentAt: 0 };
         }
         render();
-        // Optional demo notification after 5 seconds to showcase YouTube-style real-time simulation
-        setTimeout(() => {
-          if (state.notifications.length < 4) {
-            simulateNewRouteNotif();
-          }
-        }, 5000);
       });
     </script>
   </body>
