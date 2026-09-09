@@ -955,6 +955,21 @@
         render();
       };
 
+      // Hidden admin entry point: 5 taps on the logo within 3s opens admin.html in a new tab
+      // (admin.html is PC-only and gates itself server-side via /api/admin/verify, so this
+      // is just a discreet way in - not a security boundary).
+      window.handleLogoTap = function() {
+        const now = Date.now();
+        window._logoTapTimes = (window._logoTapTimes || []).filter(t => now - t < 3000);
+        window._logoTapTimes.push(now);
+        if (window._logoTapTimes.length >= 5) {
+          window._logoTapTimes = [];
+          window.open('admin.html', '_blank');
+          return;
+        }
+        setTab('explore');
+      };
+
       window.setPurposeFilter = function(purpose) {
         state.filter.purpose = purpose;
         saveState();
@@ -2061,7 +2076,7 @@
         // Header
         html += `
           <header>
-            <div class="logo-box" onclick="setTab('explore')">
+            <div class="logo-box" onclick="handleLogoTap()">
               <span>KEONGYU</span>
               <span style="font-size:12px; color:var(--text-sub); font-weight:700;">경유</span>
             </div>
