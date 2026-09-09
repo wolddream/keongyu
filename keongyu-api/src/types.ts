@@ -12,5 +12,6 @@ declare global {
 		SMTP_PORT: string;
 		SENDER_EMAIL: string;
 		APP_PASSWORD: string;
+		PORTONE_API_SECRET: string;
 	}
 }

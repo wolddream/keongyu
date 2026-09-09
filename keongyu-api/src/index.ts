@@ -21,9 +21,12 @@
  *   POST /api/chat                         -> insert a chat message (DO broadcast: 5️⃣ 단계에서 연결)
  *   POST /api/auth/email/send              -> generate + email a 6-digit login code (real SMTP)
  *   POST /api/auth/email/verify            -> check a code, consume it on success
+ *   POST /api/points/verify                -> verify a PortOne payment server-side, credit 별사탕
  *   ※ Turnstile 봇 방지는 사용자 요청으로 중단됨 (verifyTurnstile()는 남겨뒀지만 미호출)
  *   GET  /oauth/kakao/callback             -> Kakao OAuth redirect target
  *   GET  /api/admin/verify                 -> checks X-ADMIN-TOKEN header against env.ADMIN_TOKEN
+ *   GET  /api/admin/reports?status=        -> list reports (X-ADMIN-TOKEN required; status defaults to "open")
+ *   PATCH /api/admin/reports/:id           -> mark a report resolved + admin_logs entry (X-ADMIN-TOKEN required)
  *
  * Bindings (wrangler.jsonc): DB (D1), IMAGES (R2)
  * Secrets (wrangler secret put): TURNSTILE_SECRET_KEY, KAKAO_REST_API_KEY, (optional) KAKAO_CLIENT_SECRET,
@@ -35,13 +38,14 @@
  */
 import "./types";
 import { cors, json } from "./util";
-import { handleAdminVerify } from "./admin";
+import { handleAdminVerify, handleGetReports, handleResolveReport } from "./admin";
 import { handleKakaoCallback } from "./kakao";
 import { handleChat, handleGetChat } from "./chat";
 import { handleGetRoutes, handleGetRouteDetail, handlePostRoutes, handlePutRouteSteps, handlePatchRoute, handleGetImage } from "./routes";
 import { handleToggleLike, handleToggleCheckin, handleGetSubscriptions, handlePostSubscription, handleDeleteSubscription, handleGetNotifications, handleMarkAllNotificationsRead } from "./social";
 import { handleGetUser, handlePatchUser } from "./profile";
 import { handleSendEmailCode, handleVerifyEmailCode } from "./auth";
+import { handleVerifyPayment } from "./points";
 
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
@@ -123,11 +127,21 @@ export default {
 			if (url.pathname === "/api/auth/email/verify" && request.method === "POST") {
 				return cors(await handleVerifyEmailCode(request, env));
 			}
+			if (url.pathname === "/api/points/verify" && request.method === "POST") {
+				return cors(await handleVerifyPayment(request, env));
+			}
 			if (url.pathname === "/oauth/kakao/callback" && request.method === "GET") {
 				return handleKakaoCallback(request, env); // full-page redirect, no CORS needed
 			}
 			if (url.pathname === "/api/admin/verify" && request.method === "GET") {
 				return cors(await handleAdminVerify(request, env));
+			}
+			if (url.pathname === "/api/admin/reports" && request.method === "GET") {
+				return cors(await handleGetReports(request, env));
+			}
+			// /api/admin/reports/:id
+			if (segments[0] === "api" && segments[1] === "admin" && segments[2] === "reports" && segments.length === 4 && request.method === "PATCH") {
+				return cors(await handleResolveReport(request, env, segments[3]));
 			}
 		} catch (err) {
 			return cors(json({ error: (err as Error).message }, 500));

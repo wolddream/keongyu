@@ -271,6 +271,8 @@
     </style>
     <!-- Kakao JavaScript SDK (6️⃣ 인증 & 카카오, KEONGYU-Cloudflare-Notion.md) -->
     <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js"></script>
+    <!-- PortOne V2 Browser SDK (7️⃣ 결제 - 별사탕, KEONGYU-Cloudflare-Notion.md) -->
+    <script src="https://cdn.portone.io/v2/browser-sdk.js"></script>
     <!-- Cloudflare Web Analytics (8️⃣ 배포 & 모니터링) -->
     <script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "bb05efd24a8447c8ad7e441b94963742"}'></script>
     <!-- Cloudflare Turnstile 봇 방지(8️⃣ 배포 & 모니터링)는 사용자 요청으로 비활성화됨.
@@ -557,6 +559,11 @@
       // fixed constant rather than inferred.
       const SITE_BASE = 'https://keongyu.pages.dev';
 
+      // PortOne V2 - Store ID/Channel Key는 결제창을 여는 데만 쓰이는 공개 식별자라 클라이언트에
+      // 노출돼도 안전함 (실제 결제 검증은 Worker가 API Secret으로 서버 사이드에서 수행, keongyu-api/src/points.ts).
+      const PORTONE_STORE_ID = 'store-7baaa782-32ab-4a91-8d98-37229cf118a5';
+      const PORTONE_CHANNEL_KEY = 'channel-key-87f6d415-63de-43ba-b842-a5c04a2638ac';
+
       // Resolves a step/route photo to a displayable <img src>: server-stored photos come back as
       // bare R2 keys (e.g. "routes/r_x/step0/img_y"), locally-created-but-not-yet-synced ones are
       // still data: URLs. Both need to render the same way in the UI.
@@ -581,6 +588,20 @@
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(body),
         });
+      }
+
+      // Unlike apiJson/apiSync above (fire-and-forget optimistic updates), payment verification
+      // needs the server's answer before crediting anything in the UI - the points figure has to
+      // come back from the Worker (which checked the payment with PortOne), never be assumed locally.
+      async function apiJsonAwait(path, method, body) {
+        const res = await fetch(`${API_BASE}${path}`, {
+          method,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `요청 실패 (${res.status})`);
+        return data;
       }
 
       // Maps a GET /api/routes row (see keongyu-api/src/routes.ts routeRowToClient) onto this
@@ -1868,22 +1889,23 @@
       };
 
       window.handleStopFileInput = function(e) {
-        const file = e.target.files && e.target.files[0];
+        const files = Array.from(e.target.files || []);
         e.target.value = '';
-        if (!file || !state.ui.stopEditor) return;
-        if (state.ui.stopEditor.photos.length >= MAX_STOP_PHOTOS) {
+        if (!files.length || !state.ui.stopEditor) return;
+        const remaining = MAX_STOP_PHOTOS - state.ui.stopEditor.photos.length;
+        if (remaining <= 0) {
           showToast(`사진은 최대 ${MAX_STOP_PHOTOS}장까지 등록할 수 있어요.`);
           return;
         }
-        resizeImageFile(file).then(url => {
-          if (!url || !state.ui.stopEditor) return;
-          if (state.ui.stopEditor.photos.length >= MAX_STOP_PHOTOS) {
-            showToast(`사진은 최대 ${MAX_STOP_PHOTOS}장까지 등록할 수 있어요.`);
-            return;
-          }
-          state.ui.stopEditor.photos.push(url);
-          if (!state.ui.stopEditor.photoCaption) {
-            state.ui.stopEditor.photoCaption = `${file.name.replace(/\.[^/.]+$/, '')} 현장 사진`;
+        const toAdd = files.slice(0, remaining);
+        if (files.length > toAdd.length) {
+          showToast(`사진은 최대 ${MAX_STOP_PHOTOS}장까지 등록할 수 있어요. (${toAdd.length}장만 추가됩니다)`);
+        }
+        Promise.all(toAdd.map(resizeImageFile)).then(urls => {
+          if (!state.ui.stopEditor) return;
+          urls.filter(Boolean).forEach(url => state.ui.stopEditor.photos.push(url));
+          if (!state.ui.stopEditor.photoCaption && toAdd[0]) {
+            state.ui.stopEditor.photoCaption = `${toAdd[0].name.replace(/\.[^/.]+$/, '')} 현장 사진`;
           }
           render();
         });
@@ -2425,14 +2447,6 @@
         syncPointsDelta(-cost, `선물하기: ${category}/${key}`);
       };
 
-      window.chargePoints = function(amount, won) {
-        state.user.points += amount;
-        saveState();
-        showToast(`${won} 결제 완료! 별사탕 ${amount}개가 충전되었습니다. ⭐`);
-        render();
-        syncPointsDelta(amount, `충전: ${won}`);
-      };
-
       // 충전소: 팩 + 결제수단 선택 후 "결제하기"로 확정하는 2단계 플로우
       window.selectChargePack = function(amount, won) {
         state.ui.charge.pack = { amount, won };
@@ -2444,14 +2458,68 @@
         render();
       };
 
-      window.confirmCharge = function() {
+      // PortOne 결제수단 코드 매핑 - 카카오페이는 별도 easyPayProvider가 필요.
+      const PORTONE_PAY_METHODS = {
+        '카드': { payMethod: 'CARD' },
+        '카카오페이': { payMethod: 'EASY_PAY', easyPay: { easyPayProvider: 'KAKAOPAY' } },
+        '휴대폰': { payMethod: 'MOBILE' },
+      };
+
+      // 결제창을 띄우고, 성공하면 반드시 서버(POST /api/points/verify)가 PortOne에 직접 물어
+      // 결제 상태/금액을 확인한 뒤 돌려주는 잔액으로만 별사탕을 반영한다 - 이 앱의 다른 포인트
+      // 지급(초대/체크인 등)과 달리 실제 결제가 걸려 있어 클라이언트가 보내는 값을 믿을 수 없다.
+      window.confirmCharge = async function() {
         const { pack, method } = state.ui.charge;
         if (!pack || !method) {
           showToast('충전 금액과 결제수단을 모두 선택해주세요.');
           return;
         }
-        chargePoints(pack.amount, pack.won);
-        showToast(`${method}로 ${pack.won} 결제 완료! 별사탕 ${pack.amount}개가 충전되었습니다. ⭐`);
+        if (!state.user.isLoggedIn) {
+          state.ui.bottomSheet = null;
+          showToast('로그인 후 별사탕을 충전할 수 있어요 🔐');
+          openLoginSheet('initial');
+          return;
+        }
+        if (typeof PortOne === 'undefined') {
+          showToast('결제 모듈을 불러오지 못했어요. 잠시 후 다시 시도해주세요.');
+          return;
+        }
+
+        const wonAmount = parseInt(pack.won.replace(/[^0-9]/g, ''), 10);
+        let payResponse;
+        try {
+          payResponse = await PortOne.requestPayment({
+            storeId: PORTONE_STORE_ID,
+            channelKey: PORTONE_CHANNEL_KEY,
+            paymentId: `pay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            orderName: `별사탕 ${pack.amount}개`,
+            totalAmount: wonAmount,
+            currency: 'CURRENCY_KRW',
+            customer: { customerId: state.user.id, fullName: state.user.name },
+            ...PORTONE_PAY_METHODS[method],
+          });
+        } catch (err) {
+          showToast('결제창을 여는 데 실패했어요. 잠시 후 다시 시도해주세요.');
+          return;
+        }
+
+        if (!payResponse || payResponse.code) {
+          showToast((payResponse && payResponse.message) || '결제가 취소됐어요.');
+          return;
+        }
+
+        try {
+          const result = await apiJsonAwait('/api/points/verify', 'POST', {
+            payment_id: payResponse.paymentId,
+            user_id: state.user.id,
+          });
+          state.user.points = result.points;
+          showToast(`${pack.won} 결제 완료! 별사탕 ${pack.amount}개가 충전되었습니다. ⭐`);
+        } catch (err) {
+          showToast('결제 확인에 실패했어요. 문제가 계속되면 문의해주세요.');
+          return;
+        }
+
         state.ui.charge = { pack: null, method: null };
         state.ui.bottomSheet = null;
         saveState();
@@ -2752,7 +2820,7 @@
 
         // 2b. Lock background scroll while a sheet/overlay covers the screen
         // (prevents the page behind a bottom sheet from rubber-banding on mobile).
-        const anyOverlayOpen = !!(state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.stopEditor || state.ui.followRouteId || state.ui.loginSheet || state.ui.profileSheet);
+        const anyOverlayOpen = !!(state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.stopEditor || state.ui.followRouteId || state.ui.loginSheet || state.ui.profileSheet || state.ui.photoLightbox || state.ui.chatSheet);
         // overflow:hidden on body alone doesn't stop <html> from scrolling - lock both.
         document.body.style.overflow = anyOverlayOpen ? 'hidden' : '';
         document.documentElement.style.overflow = anyOverlayOpen ? 'hidden' : '';
@@ -3646,7 +3714,7 @@
                   </div>
                   <label class="cta-btn" style="padding:9px; font-size:12px; background:#FFF; color:var(--text); border:1px solid var(--border); text-align:center; cursor:pointer; opacity:${se.photos.length >= MAX_STOP_PHOTOS ? '0.5' : '1'}; pointer-events:${se.photos.length >= MAX_STOP_PHOTOS ? 'none' : 'auto'};">
                     📁 파일 업로드
-                    <input type="file" accept="image/*" style="display:none;" onchange="handleStopFileInput(event)" ${se.photos.length >= MAX_STOP_PHOTOS ? 'disabled' : ''} />
+                    <input type="file" accept="image/*" multiple style="display:none;" onchange="handleStopFileInput(event)" ${se.photos.length >= MAX_STOP_PHOTOS ? 'disabled' : ''} />
                   </label>
 
                   ${se.gps ? `

@@ -166,11 +166,14 @@
       // ==========================================
       // 1. 데이터 로딩 (localStorage keongyu_v1)
       // ==========================================
-      // TODO(D1 연동): 아래 loadAppState()는 "이 브라우저의" localStorage만 읽습니다.
+      // TODO(D1 연동): 아래 loadAppState()는 "이 브라우저의" localStorage만 읽습니다 (routes/users/payments 탭).
       // 실제 다중 사용자 데이터를 보려면 D1 기반 API로 교체:
       //   const res = await fetch(`${ADMIN_API_BASE}/api/admin/routes`, { headers: { 'X-ADMIN-TOKEN': adminToken } });
       //   const { routes } = await res.json();
-      // 아래 D1 스키마도 함께 참고 (schema.sql에 이미 반영됨 - wrangler d1 execute로 keongyu-db에 생성 완료):
+      // 신고 관리(reports) 탭은 이미 이렇게 D1로 전환되어 있습니다 - fetchReports()/handleGetReports 참고.
+      //
+      // reports/admin_logs 테이블 정의는 schema_admin.sql(레포 루트)에 있고, keongyu-db(원격 D1)에
+      // wrangler d1 execute --file=./schema_admin.sql --remote 로 이미 적용되어 있습니다:
       //
       // CREATE TABLE reports (id TEXT PRIMARY KEY, route_id TEXT, reason TEXT, reporter_id TEXT, status TEXT DEFAULT 'open', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
       // CREATE TABLE admin_logs (id TEXT PRIMARY KEY, admin_id TEXT, action TEXT, target_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
@@ -194,12 +197,8 @@
 
       let appState = loadAppState();
 
-      // reports / pointsHistory는 메인 앱 state에 아직 존재하지 않는 필드라 (D1 전용) 항상 데모 더미로 대체됩니다.
-      const DUMMY_REPORTS = [
-        { id: 'rep_1', routeId: 'r3', reason: '부적절한 사진', reporter: '익명123', time: '2시간 전' },
-        { id: 'rep_2', routeId: 'r6', reason: '스팸/광고성 루트', reporter: '익명456', time: '어제' },
-        { id: 'rep_3', routeId: 'r8', reason: '허위 정보', reporter: '익명789', time: '3일 전' }
-      ];
+      // reports는 D1 reports 테이블에서 실시간으로 읽어옵니다 (아래 3-1. 신고 관리 참고).
+      // pointsHistory는 아직 D1에 집계 API가 없어 데모 더미로 남아있습니다.
       const DUMMY_USERS = [
         { id: 'demo_u1', name: '성수러버민지', points: 340 },
         { id: 'demo_u2', name: '힙스터준', points: 210 },
@@ -211,7 +210,42 @@
         { user: '나', amount: 360, reason: '충전 (3,000원)', time: '어제' }
       ];
 
-      let reports = DUMMY_REPORTS.slice();
+      // 3-1. 신고 관리: D1 reports 테이블 (X-ADMIN-TOKEN 필요)
+      let reports = [];
+      let reportsLoading = false;
+      let reportsError = null;
+
+      async function fetchReports() {
+        try {
+          const res = await fetch(`${ADMIN_API_BASE}/api/admin/reports?status=open`, {
+            headers: { 'X-ADMIN-TOKEN': adminToken }
+          });
+          if (!res.ok) throw new Error('request failed');
+          const data = await res.json();
+          reports = data.reports || [];
+          reportsError = null;
+        } catch (e) {
+          reportsError = '신고 목록을 불러오지 못했습니다. 네트워크를 확인해주세요.';
+        }
+      }
+
+      // 신고 탭 진입 시: 로딩 표시 -> fetch -> 재렌더. (대시보드 KPI용 카운트는 initAdmin()에서
+      // 탭을 바꾸지 않고 fetchReports()만 미리 호출해둡니다.)
+      async function loadReportsTab() {
+        reportsLoading = true;
+        renderTab('reports');
+        await fetchReports();
+        reportsLoading = false;
+        renderTab('reports');
+      }
+
+      function formatDateTime(sqlDatetime) {
+        if (!sqlDatetime) return '—';
+        const d = new Date(sqlDatetime.replace(' ', 'T') + 'Z'); // D1 CURRENT_TIMESTAMP는 UTC
+        if (isNaN(d.getTime())) return sqlDatetime;
+        return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      }
+
       const users = (appState && appState.user) ? [appState.user] : DUMMY_USERS;
       const pointsHistory = DUMMY_POINTS_HISTORY;
 
@@ -336,27 +370,37 @@
 
       function renderReports() {
         const routes = getRoutes();
+        let body;
+        if (reportsLoading) {
+          body = `<tr class="empty-row"><td colspan="5">불러오는 중...</td></tr>`;
+        } else if (reportsError) {
+          body = `<tr class="empty-row"><td colspan="5">${esc(reportsError)}</td></tr>`;
+        } else if (reports.length === 0) {
+          body = `<tr class="empty-row"><td colspan="5">신고가 없습니다.</td></tr>`;
+        } else {
+          body = reports.map(rep => {
+            const route = routes.find(r => r.id === rep.route_id);
+            return `
+              <tr>
+                <td><span class="chip">${esc(rep.route_id)}</span>${route ? ` <span style="color:var(--text-sub); font-size:11px;">(${esc(route.title)})</span>` : ''}</td>
+                <td>${esc(rep.reason)}</td>
+                <td>${esc(rep.reporter_id || '익명')}</td>
+                <td>${formatDateTime(rep.created_at)}</td>
+                <td><button class="btn btn-mint" onclick="resolveReport('${esc(rep.id)}')">처리 완료</button></td>
+              </tr>
+            `;
+          }).join('');
+        }
         return `
           <h1>🚨 신고 관리</h1>
-          <div class="subtitle">신고 ${reports.length}건 (데모 데이터 — 새로고침 시 초기화됩니다. D1 reports 테이블 연동 전)</div>
+          <div class="subtitle">미처리 신고 ${reportsLoading ? '—' : reports.length}건 (D1 reports 테이블, keongyu-api 실시간 연동)</div>
           <div class="panel">
             <table>
               <thead><tr><th>루트 ID</th><th>사유</th><th>신고자</th><th>시간</th><th>처리</th></tr></thead>
-              <tbody>
-                ${reports.length === 0 ? `<tr class="empty-row"><td colspan="5">신고가 없습니다.</td></tr>` : reports.map(rep => {
-                  const route = routes.find(r => r.id === rep.routeId);
-                  return `
-                    <tr>
-                      <td><span class="chip">${esc(rep.routeId)}</span>${route ? ` <span style="color:var(--text-sub); font-size:11px;">(${esc(route.title)})</span>` : ''}</td>
-                      <td>${esc(rep.reason)}</td>
-                      <td>${esc(rep.reporter)}</td>
-                      <td>${esc(rep.time)}</td>
-                      <td><button class="btn btn-mint" onclick="resolveReport('${esc(rep.id)}')">처리 완료</button></td>
-                    </tr>
-                  `;
-                }).join('')}
-              </tbody>
+              <tbody>${body}</tbody>
             </table>
+            <!-- 참고: 신고 접수(POST) UI는 메인 앱(index.html)에 아직 없어 이 큐는 실제 운영에서
+                 계속 비어있을 수 있습니다 - "신고하기" 버튼을 메인 앱에 추가하는 건 별도 작업입니다. -->
           </div>
         `;
       }
@@ -520,11 +564,18 @@
         URL.revokeObjectURL(url);
       };
 
-      window.resolveReport = function(reportId) {
-        reports = reports.filter(r => r.id !== reportId);
-        // TODO: D1 reports.status='resolved' + admin_logs insert
-        // fetch(`${ADMIN_API_BASE}/api/admin/reports/${reportId}`, {method:'PATCH', headers:{'X-ADMIN-TOKEN': adminToken}, body: JSON.stringify({status:'resolved'})})
-        renderTab('reports');
+      window.resolveReport = async function(reportId) {
+        try {
+          const res = await fetch(`${ADMIN_API_BASE}/api/admin/reports/${reportId}`, {
+            method: 'PATCH',
+            headers: { 'X-ADMIN-TOKEN': adminToken }
+          });
+          if (!res.ok) { alert('처리에 실패했습니다.'); return; }
+        } catch (e) {
+          alert('네트워크 오류로 처리에 실패했습니다.');
+          return;
+        }
+        await loadReportsTab(); // 서버가 status='resolved' + admin_logs를 기록했으니 open 목록만 다시 불러옴
       };
 
       window.grantPoints = function(userId) {
@@ -602,11 +653,16 @@
         return false;
       }
 
-      function initAdmin() {
+      async function initAdmin() {
         document.querySelectorAll('#sidebar-nav .nav-item').forEach(btn => {
-          btn.addEventListener('click', () => renderTab(btn.dataset.tab));
+          btn.addEventListener('click', () => {
+            if (btn.dataset.tab === 'reports') loadReportsTab();
+            else renderTab(btn.dataset.tab);
+          });
         });
         renderTab('dashboard');
+        await fetchReports(); // 탭 전환 없이 대시보드 신고 KPI만 채워둠
+        if (currentTab === 'dashboard') renderTab('dashboard');
       }
 
       window.addEventListener('DOMContentLoaded', async () => {
