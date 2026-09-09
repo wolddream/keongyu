@@ -781,22 +781,24 @@
       }
 
       window.sendInvite = function(channel) {
-        const link = `https://keongyu.app/invite?code=USER_${state.user.invites}`;
+        // Was hardcoded to https://keongyu.app/... - that domain has no DNS at all (never
+        // actually connected, see KEONGYU-Cloudflare-Notion.md's still-unchecked custom domain
+        // step), so the invite link and its Kakao share image both silently died. Use the
+        // current origin, same as shareChannel()'s route-share link.
+        const link = `${window.location.origin}${window.location.pathname}?invite=USER_${state.user.invites}`;
         if (channel === '카카오톡') {
           if (!window.Kakao || !Kakao.isInitialized() || !Kakao.Share || typeof Kakao.Share.sendDefault !== 'function') {
             showToast('카카오톡 공유를 사용할 수 없어요. 링크 복사를 이용해주세요.');
             return;
           }
           try {
+            // 'text' template, not 'feed' - there's no real branded image asset to point at, and
+            // a 'feed' card needs a working content.imageUrl or it fails to render for whoever
+            // receives it (this is the same bug shareChannel() had - see the comment there).
             Kakao.Share.sendDefault({
-              objectType: 'feed',
-              content: {
-                title: '경유(KEONGYU)에서 함께 루트를 만들어봐요!',
-                description: '친구가 나를 경유에 초대했어요. 지금 가입하면 별사탕 +20개!',
-                imageUrl: 'https://keongyu.app/og-image.png',
-                link: { mobileWebUrl: link, webUrl: link }
-              },
-              buttons: [{ title: '초대 수락하고 시작하기', link: { mobileWebUrl: link, webUrl: link } }]
+              objectType: 'text',
+              text: '경유(KEONGYU)에서 함께 루트를 만들어봐요!\n친구가 나를 경유에 초대했어요. 지금 가입하면 별사탕 +20개!',
+              link: { mobileWebUrl: link, webUrl: link }
             });
           } catch (err) {
             showToast('카카오톡 공유창을 여는 데 실패했어요.');
@@ -1444,16 +1446,31 @@
             return;
           }
           try {
-            Kakao.Share.sendDefault({
-              objectType: 'feed',
-              content: {
-                title: shareTitle,
-                description: '경유(KEONGYU)에서 이 루트를 확인해보세요!',
-                imageUrl: 'https://keongyu.app/og-image.png',
+            // objectType 'feed' requires a real, publicly-fetchable content.imageUrl - a dead
+            // link there (this used to hardcode https://keongyu.app/og-image.png, a domain with
+            // no DNS at all) makes the shared card fail to render as "찾을 수 없음"/not found for
+            // whoever opens it. Use the route's own cover photo when it has one (already
+            // resolvable through our own API), otherwise fall back to the image-less 'text'
+            // template rather than pointing at an asset that doesn't exist.
+            const shareImage = resolveImageUrl(route && route.image);
+            if (shareImage) {
+              Kakao.Share.sendDefault({
+                objectType: 'feed',
+                content: {
+                  title: shareTitle,
+                  description: '경유(KEONGYU)에서 이 루트를 확인해보세요!',
+                  imageUrl: shareImage,
+                  link: { mobileWebUrl: shareUrl, webUrl: shareUrl }
+                },
+                buttons: [{ title: '루트 보러가기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } }]
+              });
+            } else {
+              Kakao.Share.sendDefault({
+                objectType: 'text',
+                text: `${shareTitle}\n경유(KEONGYU)에서 이 루트를 확인해보세요!`,
                 link: { mobileWebUrl: shareUrl, webUrl: shareUrl }
-              },
-              buttons: [{ title: '루트 보러가기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } }]
-            });
+              });
+            }
           } catch (err) {
             showToast('카카오톡 공유창을 열지 못했어요.');
             return;
@@ -2198,7 +2215,7 @@
         }
         state.user.points -= cost;
         saveState();
-        const link = `keongyu.app/gift/${category}_${key}?from=${encodeURIComponent(state.user.name)}`;
+        const link = `${window.location.origin}${window.location.pathname}?gift=${category}_${key}&from=${encodeURIComponent(state.user.name)}`;
         copyText(link, '선물 링크가 복사됐어요! 친구에게 전달해보세요 🎁', 0);
         syncPointsDelta(-cost, `선물하기: ${category}/${key}`);
       };
@@ -2356,7 +2373,7 @@
         const code = Math.random().toString(36).slice(2, 6);
         if (!route.pendingInvites) route.pendingInvites = [];
         route.pendingInvites.push({ code, name, createdAt: Date.now() });
-        const link = `keongyu.app/join/${routeId}?code=${code}`;
+        const link = `${window.location.origin}${window.location.pathname}?join=${routeId}&code=${code}`;
         copyText(link, '초대 링크 복사됨! 👥', 8);
         if (input) input.value = '';
         // Demo simulation: friend "joins" a couple seconds after the invite link is copied.
@@ -2492,7 +2509,7 @@
       };
 
       window.shareCollabLink = function(routeId) {
-        const link = `keongyu.app/join/${routeId}`;
+        const link = `${window.location.origin}${window.location.pathname}?join=${routeId}`;
         copyText(link, '함께가기 참여 링크가 복사되었습니다! 👥', 8);
       };
 
@@ -2852,7 +2869,7 @@
           `;
         } else if (state.ui.tab === 'growth') {
           // Growth Tab
-          const inviteLink = `https://keongyu.app/invite?code=USER_${state.user.invites}`;
+          const inviteLink = `${window.location.origin}${window.location.pathname}?invite=USER_${state.user.invites}`;
           html += `
             <!-- Invite Link Card -->
             <div style="background:linear-gradient(135deg, #8B6CFF, #5BA9FF); border-radius:20px; padding:18px; color:white; box-shadow:0 4px 16px rgba(139,108,255,0.3);">
