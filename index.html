@@ -1185,9 +1185,47 @@
       window.shareChannel = function(channel) {
         const route = state.routes.find(r => r.id === state.ui.shareRouteId) || state.routes[0];
         const shareUrl = window.location.href.split('?')[0] + '?route=' + (route ? route.id : '');
-        copyText(shareUrl, `[${channel}] 공유 링크가 복사되었습니다! ⭐+8 별사탕 적립`, 8);
+        const shareTitle = route ? route.title : '경유(KEONGYU)';
+
+        if (channel === '카카오톡') {
+          if (!window.Kakao || !Kakao.isInitialized() || !Kakao.Share || typeof Kakao.Share.sendDefault !== 'function') {
+            showToast('카카오톡 공유를 사용할 수 없어요. 링크 복사를 이용해주세요.');
+            return;
+          }
+          try {
+            Kakao.Share.sendDefault({
+              objectType: 'feed',
+              content: {
+                title: shareTitle,
+                description: '경유(KEONGYU)에서 이 루트를 확인해보세요!',
+                imageUrl: 'https://keongyu.app/og-image.png',
+                link: { mobileWebUrl: shareUrl, webUrl: shareUrl }
+              },
+              buttons: [{ title: '루트 보러가기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } }]
+            });
+          } catch (err) {
+            showToast('카카오톡 공유창을 열지 못했어요.');
+            return;
+          }
+        } else if (channel === '문자') {
+          // SMS URI scheme: opens the device's native message composer with the link pre-filled.
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(shareUrl).catch(() => {});
+          window.location.href = 'sms:?body=' + encodeURIComponent(`${shareTitle} - 경유에서 확인해보세요! ${shareUrl}`);
+        } else if (channel === '인스타그램') {
+          // Instagram has no web share-intent API - copy the link and open Instagram so the
+          // user can paste it into a Story/DM themselves.
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(shareUrl).catch(() => {});
+          window.open('https://www.instagram.com/', '_blank');
+        } else if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(shareUrl).catch(() => {});
+        }
+
+        state.user.points += 8;
         state.ui.bottomSheet = null;
         saveState();
+        showToast(channel === '인스타그램'
+          ? '링크가 복사됐어요! 인스타그램에서 붙여넣기 해주세요 📷 ⭐+8 적립'
+          : `[${channel}] 공유 완료! ⭐+8 별사탕 적립`);
         render();
       };
 
@@ -1671,7 +1709,13 @@
         if (!route) return;
         const key = route.id + '_' + stepIdx + '_' + state.user.name;
         if (state.user.followCheckins[key]) {
-          showToast('이미 GPS 인증을 완료한 스텝입니다!');
+          // Tapping an already-checked-in step cancels it (undo a mistaken tap).
+          // Claw back the reward so check-in/cancel can't be farmed for free 별사탕.
+          delete state.user.followCheckins[key];
+          state.user.points = Math.max(0, state.user.points - 5);
+          saveState();
+          showToast('GPS 인증을 취소했어요.');
+          render();
           return;
         }
         state.user.followCheckins[key] = true;
@@ -1702,6 +1746,14 @@
       };
 
       window.openFinishModal = function() {
+        const route = state.routes.find(r => r.id === state.ui.followRouteId);
+        if (!route) return;
+        const totalSteps = route.steps.length;
+        const myCheckedCount = route.steps.filter((_, i) => state.user.followCheckins[route.id + '_' + i + '_' + state.user.name]).length;
+        if (myCheckedCount < totalSteps) {
+          showToast(`모든 경유지 GPS 인증을 마쳐야 완주할 수 있어요 (${myCheckedCount}/${totalSteps}) 📍`);
+          return;
+        }
         state.ui.bottomSheet = 'finishCertification';
         state.ui.review = { stars: 5, text: '', images: [] };
         render();
@@ -2643,7 +2695,7 @@
                               if (!route.isCollaborative && !isMe) return '';
                               return `
                                 <button class="cta-btn" style="padding:9px; font-size:12px; background:${pChecked ? '#2DD4A0' : (isMe ? 'var(--primary)' : '#EEE')}; color:${pChecked ? '#FFF' : (isMe ? '#FFF' : 'var(--text)')};" data-route-id="${esc(route.id)}" data-step="${idx}" data-name="${esc(p.name)}" onclick="${isMe ? 'gpsCheckInStep(this.dataset.routeId, Number(this.dataset.step))' : 'verifyParticipantGPS(this.dataset.routeId, Number(this.dataset.step), this.dataset.name)'}">
-                                  ${p.avatar || ''} ${isMe ? '나' : esc(p.name)} 인증 ${pChecked ? '✅' : (isMe ? '📍 (+5⭐)' : '⏳')}
+                                  ${p.avatar || ''} ${isMe ? '나' : esc(p.name)} 인증 ${pChecked ? (isMe ? '✅ 완료 (탭하여 취소)' : '✅') : (isMe ? '📍 (+5⭐)' : '⏳')}
                                 </button>
                               `;
                             }).join('')}
@@ -2682,8 +2734,8 @@
 
                 <!-- Bottom Action -->
                 <div style="padding:12px 16px; background:#FFF; border-top:1px solid var(--border);">
-                  <button class="cta-btn" style="width:100%; padding:13px; font-size:14px;" onclick="openFinishModal()">
-                    완주하고 인증하기 🎉
+                  <button class="cta-btn" style="width:100%; padding:13px; font-size:14px; opacity:${myCheckedCount < totalSteps ? '0.5' : '1'};" onclick="openFinishModal()">
+                    ${myCheckedCount < totalSteps ? `완주하려면 ${totalSteps - myCheckedCount}곳 더 인증하세요 📍` : '완주하고 인증하기 🎉'}
                   </button>
                 </div>
               </div>
