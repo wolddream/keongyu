@@ -364,7 +364,11 @@
             // KOE205(잘못된 요청) 오류가 남. 콘솔에서 "카카오계정(이메일)" 동의항목을 켜면
             // 다시 scope에 추가해도 됩니다 (email은 어차피 옵셔널로 처리되어 있음).
             scope: 'friends,profile_nickname,profile_image',
-            state: encodeURIComponent(window.location.origin)
+            // Fixed SITE_BASE, not window.location.origin - if this round-trips wrong (or the
+            // OAuth flow's `state` param gets dropped somewhere), keongyu-api's callback falls
+            // back to a hardcoded workers.dev URL, and every share link built from that page load
+            // then inherits that wrong domain (see SITE_BASE's own comment).
+            state: encodeURIComponent(SITE_BASE)
           });
           // authorize()는 즉시 페이지를 이탈시키므로 이 함수는 여기서 끝. 로그인 결과 반영은
           // 카카오 -> keongyu-api -> 이 페이지(#kakao_login=...)로 돌아온 뒤 DOMContentLoaded에서 처리.
@@ -509,6 +513,13 @@
       // 0. Constants & Utilities
       // ==========================================
       const API_BASE = 'https://keongyu-api.wolddream.workers.dev';
+      // Fixed, known-correct frontend origin for share/invite links. Deliberately NOT derived from
+      // window.location - a user can end up on the wrong origin (e.g. workers.dev if the Kakao
+      // OAuth redirect's `state` round-trip ever falls back to its default, or just from testing a
+      // preview/deploy URL directly), and location-derived share links silently bake that wrong
+      // domain into every link generated from that page load. Same reasoning as API_BASE being a
+      // fixed constant rather than inferred.
+      const SITE_BASE = 'https://keongyu.pages.dev';
 
       // Resolves a step/route photo to a displayable <img src>: server-stored photos come back as
       // bare R2 keys (e.g. "routes/r_x/step0/img_y"), locally-created-but-not-yet-synced ones are
@@ -786,7 +797,7 @@
         // actually connected, see KEONGYU-Cloudflare-Notion.md's still-unchecked custom domain
         // step), so the invite link and its Kakao share image both silently died. Use the
         // current origin, same as shareChannel()'s route-share link.
-        const link = `${window.location.origin}${window.location.pathname}?invite=USER_${state.user.invites}`;
+        const link = `${SITE_BASE}?invite=USER_${state.user.invites}`;
         if (channel === '카카오톡') {
           if (!window.Kakao || !Kakao.isInitialized() || !Kakao.Share || typeof Kakao.Share.sendDefault !== 'function') {
             showToast('카카오톡 공유를 사용할 수 없어요. 링크 복사를 이용해주세요.');
@@ -1438,7 +1449,11 @@
 
       window.shareChannel = function(channel) {
         const route = state.routes.find(r => r.id === state.ui.shareRouteId) || state.routes[0];
-        const shareUrl = window.location.href.split('?')[0] + '?route=' + (route ? route.id : '');
+        // origin+pathname, not location.href.split('?')[0] - deterministic regardless of what
+        // extra query string/hash happens to be on the current URL when this fires (e.g. a
+        // leftover #kakao_login=... hash from the OAuth redirect flow). Matches the pattern the
+        // other share/invite links in this file already use.
+        const shareUrl = `${SITE_BASE}?route=${route ? route.id : ''}`;
         const shareTitle = route ? route.title : '경유(KEONGYU)';
 
         if (channel === '카카오톡') {
@@ -2222,7 +2237,7 @@
         }
         state.user.points -= cost;
         saveState();
-        const link = `${window.location.origin}${window.location.pathname}?gift=${category}_${key}&from=${encodeURIComponent(state.user.name)}`;
+        const link = `${SITE_BASE}?gift=${category}_${key}&from=${encodeURIComponent(state.user.name)}`;
         copyText(link, '선물 링크가 복사됐어요! 친구에게 전달해보세요 🎁', 0);
         syncPointsDelta(-cost, `선물하기: ${category}/${key}`);
       };
@@ -2380,7 +2395,7 @@
         const code = Math.random().toString(36).slice(2, 6);
         if (!route.pendingInvites) route.pendingInvites = [];
         route.pendingInvites.push({ code, name, createdAt: Date.now() });
-        const link = `${window.location.origin}${window.location.pathname}?join=${routeId}&code=${code}`;
+        const link = `${SITE_BASE}?join=${routeId}&code=${code}`;
         copyText(link, '초대 링크 복사됨! 👥', 8);
         if (input) input.value = '';
         // Demo simulation: friend "joins" a couple seconds after the invite link is copied.
@@ -2516,7 +2531,7 @@
       };
 
       window.shareCollabLink = function(routeId) {
-        const link = `${window.location.origin}${window.location.pathname}?join=${routeId}`;
+        const link = `${SITE_BASE}?join=${routeId}`;
         copyText(link, '함께가기 참여 링크가 복사되었습니다! 👥', 8);
       };
 
@@ -2900,7 +2915,7 @@
           `;
         } else if (state.ui.tab === 'growth') {
           // Growth Tab
-          const inviteLink = `${window.location.origin}${window.location.pathname}?invite=USER_${state.user.invites}`;
+          const inviteLink = `${SITE_BASE}?invite=USER_${state.user.invites}`;
           html += `
             <!-- Invite Link Card -->
             <div style="background:linear-gradient(135deg, #8B6CFF, #5BA9FF); border-radius:20px; padding:18px; color:white; box-shadow:0 4px 16px rgba(139,108,255,0.3);">
@@ -3982,6 +3997,21 @@
         closeTopmostOverlay();
       });
 
+      // Opens the route named by a shared ?route=<id> link (see shareChannel()). Called after
+      // syncRoutesFromServer() so a route that only exists server-side (not in the DEFAULT_ROUTES
+      // demo seed) is already merged into state.routes by the time this looks it up - without
+      // this, following a shared link just silently landed on the plain homepage.
+      function openSharedRouteFromUrl() {
+        const routeId = new URLSearchParams(window.location.search).get('route');
+        if (!routeId) return;
+        history.replaceState(null, '', window.location.pathname + window.location.hash);
+        if (state.routes.some(r => r.id === routeId)) {
+          startFollowRoute(routeId);
+        } else {
+          showToast('공유된 루트를 찾을 수 없어요. 삭제되었거나 잘못된 링크예요.');
+        }
+      }
+
       // Initial Render
       window.addEventListener('DOMContentLoaded', () => {
         // 카카오 authorize() 리다이렉트로 방금 돌아온 경우, 로그인 시트 강제 노출 여부를
@@ -3996,7 +4026,7 @@
         }
         render();
 
-        syncRoutesFromServer();
+        syncRoutesFromServer().then(openSharedRouteFromUrl);
         syncNotificationsFromServer();
         syncSubscriptionsFromServer();
         syncProfileFromServer();

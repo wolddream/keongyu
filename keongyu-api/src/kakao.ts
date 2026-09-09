@@ -17,9 +17,12 @@ export async function handleKakaoCallback(request: Request, env: Env): Promise<R
 	const url = new URL(request.url);
 	const code = url.searchParams.get("code");
 	const errorParam = url.searchParams.get("error");
+	// Fallback was "https://keongyu.wolddream.workers.dev" - not this Worker's own domain
+	// (keongyu-api.wolddream.workers.dev) and not the frontend either, just a stray wrong value.
+	// If `state` ever comes back empty, land on the real frontend instead of a dead workers.dev URL.
 	const frontendOrigin = url.searchParams.get("state")
 		? decodeURIComponent(url.searchParams.get("state") as string)
-		: "https://keongyu.wolddream.workers.dev";
+		: "https://keongyu.pages.dev";
 	const redirectUri = `${url.origin}/oauth/kakao/callback`;
 
 	const fail = (reason: string, detail?: unknown) =>
