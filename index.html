@@ -191,6 +191,10 @@
         position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.92);
         z-index: 300; display: flex; align-items: center; justify-content: center;
       }
+      .chat-overlay {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg);
+        z-index: 150; display: flex; justify-content: center;
+      }
       .toast-box {
         position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%);
         background: rgba(25, 31, 40, 0.92); color: white; padding: 10px 18px;
@@ -1072,7 +1076,11 @@
             profileSheet: false,
             routeBuilder: null, // { title, purpose, distance, time, budget, steps: [] } - 새 루트 만들기 진행 중 상태
             stopEditor: null, // { editingIndex, category, name, ... } - 경유지 추가/수정 폼 상태
-            photoLightbox: null // { routeId, stepIdx, photoIdx } - 따라가기에서 경유지 사진 확대보기
+            photoLightbox: null, // { routeId, stepIdx, photoIdx } - 따라가기에서 경유지 사진 확대보기
+            chatSheet: null, // { routeId } - 따라가기: 루트 전체 채팅창
+            chatMessages: [], // 현재 열린 chatSheet의 메시지 목록
+            chatLoading: false,
+            chatDraft: '' // 입력 중인 메시지 - state에 없으면 폴링으로 인한 재렌더에 입력 중이던 글자가 날아감
           },
           tempImages: []
         };
@@ -1102,6 +1110,10 @@
           state.ui.stopEditor.photos = state.ui.stopEditor.photoUrl ? [state.ui.stopEditor.photoUrl] : [];
         }
         if (state.ui.photoLightbox === undefined) state.ui.photoLightbox = null;
+        if (state.ui.chatSheet === undefined) state.ui.chatSheet = null;
+        if (!Array.isArray(state.ui.chatMessages)) state.ui.chatMessages = [];
+        if (state.ui.chatLoading === undefined) state.ui.chatLoading = false;
+        if (state.ui.chatDraft === undefined) state.ui.chatDraft = '';
         if (state.challenge.todayCheck === undefined) state.challenge.todayCheck = null;
         if (state.challenge.completed === undefined) state.challenge.completed = false;
         state.routes.forEach(r => {
@@ -1920,6 +1932,11 @@
 
       window.closeFollowRoute = function() {
         state.ui.followRouteId = null;
+        if (state.ui.chatSheet) {
+          if (_chatPollTimer) { clearInterval(_chatPollTimer); _chatPollTimer = null; }
+          state.ui.chatSheet = null;
+          state.ui.chatMessages = [];
+        }
         saveState();
         render();
       };
@@ -1942,6 +1959,91 @@
         if (!step || !step.images || step.images.length < 2) return;
         lb.photoIdx = (lb.photoIdx + dir + step.images.length) % step.images.length;
         render();
+      };
+
+      // 따라가기: 루트 전체가 공유하는 단일 채팅창 (경유지별이 아니라 루트 단위 - chats 테이블의
+      // step_index는 항상 0으로 보냄). 실시간 브로드캐스트가 없어서(5️⃣ Durable Objects 미착수)
+      // 열려있는 동안 주기적으로 다시 불러오는 걸로 대신한다.
+      let _chatPollTimer = null;
+
+      window.openRouteChat = function(routeId) {
+        state.ui.chatSheet = { routeId };
+        state.ui.chatMessages = [];
+        state.ui.chatDraft = '';
+        state.ui.chatLoading = true;
+        render();
+        loadRouteChatMessages(routeId);
+        if (_chatPollTimer) clearInterval(_chatPollTimer);
+        _chatPollTimer = setInterval(() => loadRouteChatMessages(routeId, true), 4000);
+      };
+
+      window.closeRouteChat = function() {
+        if (_chatPollTimer) { clearInterval(_chatPollTimer); _chatPollTimer = null; }
+        state.ui.chatSheet = null;
+        state.ui.chatMessages = [];
+        render();
+      };
+
+      async function loadRouteChatMessages(routeId, silent) {
+        if (!silent) state.ui.chatLoading = true;
+        try {
+          const res = await fetch(`${API_BASE}/api/chat?route_id=${encodeURIComponent(routeId)}`);
+          if (res.ok) {
+            const data = await res.json();
+            state.ui.chatMessages = data.messages || [];
+          }
+        } catch (err) {
+          console.warn('[chat load failed]', err);
+        }
+        state.ui.chatLoading = false;
+        // The sheet may have been closed (or switched to a different route) while this was in flight.
+        if (state.ui.chatSheet && state.ui.chatSheet.routeId === routeId) {
+          render();
+          // Jump to the newest message on the initial load only - a silent poll refresh shouldn't
+          // yank the view down while someone's scrolled up reading history.
+          if (!silent) scrollChatToBottom();
+        }
+      }
+
+      function scrollChatToBottom() {
+        const el = document.querySelector('.chat-message-list');
+        if (el) el.scrollTop = el.scrollHeight;
+      }
+
+      window.sendRouteChatMessage = function() {
+        const sheet = state.ui.chatSheet;
+        const text = state.ui.chatDraft.trim();
+        if (!sheet || !text) return;
+        const avatar = getAvatarDisplay(state.user.name);
+        state.ui.chatMessages.push({
+          id: 'local_' + Date.now(),
+          user_id: state.user.id,
+          user_name: state.user.name,
+          avatar,
+          text,
+          created_at: new Date().toISOString(),
+        });
+        state.ui.chatDraft = '';
+        render();
+        scrollChatToBottom();
+        apiJson('/api/chat', 'POST', {
+          route_id: sheet.routeId,
+          step_index: 0,
+          user_id: state.user.id,
+          user_name: state.user.name,
+          avatar,
+          text,
+        }).then(() => loadRouteChatMessages(sheet.routeId, true));
+      };
+
+      window.handleChatInputKey = function(e) {
+        // isComposing guards against IME (한글 등) composition: browsers fire a keydown for the
+        // Enter that confirms a composing syllable too, and without this check that same Enter
+        // would also send the message mid-composition.
+        if (e.key === 'Enter' && !e.isComposing) {
+          e.preventDefault();
+          sendRouteChatMessage();
+        }
       };
 
       // Follow overlay shows every step at once (scrollable timeline), so GPS check-in
@@ -2419,7 +2521,7 @@
         // scrollTop to 0 on every one of them - felt as the screen "jumping" back up on every
         // icon tap/toggle inside a sheet. Captured/restored in DOM order, which stays stable
         // across a render() since the same state produces the same conditional structure.
-        const SCROLL_PRESERVE_SELECTOR = '.bottom-sheet, .route-timeline-scroll, .notif-list-scroll';
+        const SCROLL_PRESERVE_SELECTOR = '.bottom-sheet, .route-timeline-scroll, .notif-list-scroll, .chat-message-list';
         const savedScrollTops = Array.from(document.querySelectorAll(SCROLL_PRESERVE_SELECTOR)).map(el => el.scrollTop);
 
         // 2. Set theme color
@@ -2871,6 +2973,7 @@
                   </div>
                   <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
                     <span style="font-size:12px; font-weight:800; color:var(--primary);">✓ ${myCheckedCount}/${totalSteps}</span>
+                    <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openRouteChat('${route.id}')" title="채팅">💬</button>
                     <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openShareSheet('${route.id}')" title="공유">↗</button>
                     <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openCollabSheet('${route.id}')" title="함께가기">👥</button>
                   </div>
@@ -3027,6 +3130,41 @@
               </div>
             `;
           }
+        }
+
+        // A3. Route Chat Panel (따라가기: 루트 전체가 공유하는 단일 채팅창)
+        if (state.ui.chatSheet) {
+          const chatRoute = state.routes.find(r => r.id === state.ui.chatSheet.routeId);
+          html += `
+            <div class="chat-overlay">
+              <div class="overlay-inner">
+                <div style="padding:14px 16px; background:#FFF; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
+                  <button class="icon-btn" onclick="closeRouteChat()">✕</button>
+                  <div style="font-size:14px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:70%;">💬 ${esc(chatRoute ? chatRoute.title : '채팅')}</div>
+                  <span style="width:34px;"></span>
+                </div>
+                <div class="chat-message-list" style="flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:10px;">
+                  ${state.ui.chatLoading ? `
+                    <div style="text-align:center; color:#999; font-size:12px; padding:20px;">불러오는 중...</div>
+                  ` : state.ui.chatMessages.length === 0 ? `
+                    <div style="text-align:center; color:#999; font-size:12px; padding:20px;">아직 메시지가 없어요. 첫 메시지를 보내보세요! 💬</div>
+                  ` : state.ui.chatMessages.map(m => {
+                      const isMe = m.user_id === state.user.id;
+                      return `
+                        <div style="display:flex; flex-direction:column; align-items:${isMe ? 'flex-end' : 'flex-start'}; gap:2px;">
+                          ${!isMe ? `<span style="font-size:11px; color:var(--text-sub); font-weight:700;">${esc(m.avatar || '')} ${esc(m.user_name)}</span>` : ''}
+                          <div style="max-width:75%; padding:9px 12px; border-radius:16px; font-size:13px; line-height:1.4; word-break:break-word; background:${isMe ? 'var(--primary)' : '#F0F0EE'}; color:${isMe ? '#FFF' : 'var(--text)'};">${esc(m.text)}</div>
+                        </div>
+                      `;
+                    }).join('')}
+                </div>
+                <div style="padding:10px 12px; background:#FFF; border-top:1px solid var(--border); display:flex; gap:8px;">
+                  <input id="chat-input" type="text" placeholder="메시지 입력..." value="${esc(state.ui.chatDraft)}" oninput="state.ui.chatDraft=this.value" onkeydown="handleChatInputKey(event)" style="flex:1; border:1px solid var(--border); border-radius:20px; padding:10px 14px; font-size:13px; min-width:0;" />
+                  <button class="cta-btn" style="padding:10px 16px; font-size:13px; flex-shrink:0;" onclick="sendRouteChatMessage()">전송</button>
+                </div>
+              </div>
+            </div>
+          `;
         }
 
         // B. Notification Settings Sheet (YouTube Style V3)
@@ -3749,9 +3887,17 @@
       // 교체해 매번 새 <input> 노드가 생겨도 document 리스너는 그대로 유효합니다.
       document.addEventListener('compositionstart', e => {
         if (e.target && e.target.id === 'search-input') onSearchCompositionStart(e);
+        // chat-input's oninput never calls render() itself (see sendRouteChatMessage/chatDraft),
+        // so it just needs dataset.composing set/cleared for render()'s generic top-of-function
+        // guard to skip mid-composition rebuilds triggered by the chat poll timer.
+        if (e.target && e.target.id === 'chat-input') e.target.dataset.composing = 'true';
       });
       document.addEventListener('compositionend', e => {
         if (e.target && e.target.id === 'search-input') onSearchCompositionEnd(e);
+        if (e.target && e.target.id === 'chat-input') {
+          e.target.dataset.composing = 'false';
+          state.ui.chatDraft = e.target.value;
+        }
       });
 
       // Esc closes whatever sheet/overlay is currently on top.
@@ -3760,6 +3906,8 @@
         if (state.ui.loginSheet && !state.user.isLoggedIn) return; // 최초 로그인 유도는 Esc로 닫지 않음
         if (state.ui.photoLightbox) {
           closePhotoLightbox();
+        } else if (state.ui.chatSheet) {
+          closeRouteChat();
         } else if (state.ui.stopEditor) {
           closeStopEditor();
         } else if (state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.loginSheet || state.ui.profileSheet) {
