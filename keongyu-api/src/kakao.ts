@@ -44,7 +44,12 @@ export async function handleKakaoCallback(request: Request, env: Env): Promise<R
 			headers: { "content-type": "application/x-www-form-urlencoded;charset=utf-8" },
 			body: tokenBody,
 		});
-		const tokenData = (await tokenRes.json()) as { access_token?: string; error?: string; error_description?: string };
+		const tokenData = (await tokenRes.json()) as {
+			access_token?: string;
+			expires_in?: number;
+			error?: string;
+			error_description?: string;
+		};
 		if (!tokenData.access_token) {
 			return fail("token_exchange_failed", { status: tokenRes.status, error: tokenData.error, description: tokenData.error_description });
 		}
@@ -64,6 +69,14 @@ export async function handleKakaoCallback(request: Request, env: Env): Promise<R
 			nickname: p.nickname || "카카오유저",
 			email: account.email || null,
 			profileImage: (p as { profile_image_url?: string; profile_image?: string }).profile_image_url || (p as { profile_image?: string }).profile_image || null,
+			// 프론트가 Kakao.Auth.setAccessToken()으로 브라우저 SDK 세션을 채우는 데 쓴다 -
+			// Kakao.Picker.selectFriends() 같은 클라이언트 전용 API는 서버가 아니라 SDK 자체의
+			// 토큰을 요구하는데, 이 서버-사이드 교환 플로우에서는 그 토큰이 원래 서버에만 있고
+			// 브라우저로 전달되지 않아 "재인증 후 시도해주세요" 에러로 이어졌었다. refresh_token은
+			// 수명이 훨씬 길어(약 2개월) 노출 위험이 크므로 일부러 안 보낸다 - 만료되면 사용자가
+			// 카카오 로그인을 다시 하면 된다.
+			accessToken: tokenData.access_token,
+			expiresIn: tokenData.expires_in || null,
 		};
 		return Response.redirect(`${frontendOrigin}/#kakao_login=${encodeURIComponent(toBase64Utf8(payload))}`, 302);
 	} catch (err) {
