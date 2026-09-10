@@ -4595,17 +4595,19 @@
           };
           const getStepVisual = (type) => STEP_VISUAL[type] || { bg: '#EDE7F6', color: 'var(--primary)', emoji: '📍' };
 
-          // 이 화면(루트 상세/따라가기)도 메인 피드·내 루트 카드와 같은 route.skin을 반영한다 -
-          // 예전엔 getRouteSkinVisuals()가 카드 3곳에서만 호출되고 여기선 전혀 안 쓰여서, 카드에서
-          // 보이던 배경/프레임/뱃지/스티커/날씨 이펙트가 정작 루트를 열면 사라져 보였다.
+          // 이 화면(루트 상세/따라가기) 전체가 메인 피드·내 루트 카드와 같은 route.skin을 반영한다 -
+          // 처음엔 상단 네비게이션 바 한 줄에만 입혔더니 스크롤해서 지도/타임라인으로 내려가면
+          // 스킨이 사라져 보인다는 피드백이 있었다. 배경/프레임/필터/스티커/날씨는 화면 전체
+          // (.overlay-inner)에 걸치고, 네비 바는 아이콘 가독성을 위해 흰 배경을 유지한 채
+          // 뱃지만 그 위에 얹는다.
           const skinV = getRouteSkinVisuals(route);
-          const skinAttrs = routeCardSkinAttrs(skinV, 'padding:14px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; background:#FFF');
+          const skinAttrs = routeCardSkinAttrs(skinV);
 
           html += `
             <div class="fullscreen-overlay">
-              <div class="overlay-inner">
+              <div class="overlay-inner${skinAttrs.cls}"${skinAttrs.style}>
                 <!-- Top Nav -->
-                <div class="${skinAttrs.cls}"${skinAttrs.style}>
+                <div style="padding:14px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; background:#FFF;">
                   <button class="icon-btn" onclick="closeFollowRoute()">✕</button>
                   <div style="display:flex; align-items:center; gap:6px; max-width:220px; overflow:hidden;">
                     <div class="avatar-wrapper" style="width:24px; height:24px; font-size:13px; flex-shrink:0;">${getAvatarDisplay(route.creator)}</div>
@@ -4620,9 +4622,9 @@
                     <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openShareSheet('${route.id}')" title="공유">↗</button>
                     <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openCollabSheet('${route.id}')" title="함께가기">👥</button>
                   </div>
-                  ${skinV.stickerHtml}
-                  ${skinV.weatherHtml}
                 </div>
+                ${skinV.stickerHtml}
+                ${skinV.weatherHtml}
 
                 ${route.isCollaborative ? `
                   <div style="padding:8px 16px; background:#FAFAF8; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
