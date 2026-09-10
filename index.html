@@ -2467,11 +2467,10 @@
         const equipped = rb.skin[item.part] === item.id;
         const rarityColor = RARITY_COLORS[item.rarity] || '#9CA3AF';
         return `
-          <div style="border:2px solid ${equipped ? 'var(--primary)' : 'var(--border)'}; border-radius:14px; padding:8px 4px; text-align:center; background:#FFF; cursor:pointer;" onclick="handleRouteSkinItemTap('${item.id}')">
-            <div style="font-size:22px;">${item.emoji}</div>
-            <div style="font-size:10px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(item.name)}</div>
-            <div style="font-size:9px; font-weight:900; color:${rarityColor};">${item.rarity}</div>
-            <div style="font-size:10px; font-weight:700; color:${equipped ? 'var(--primary)' : 'var(--text-sub)'};">${equipped ? '✓ 장착됨' : (owned ? '보유중' : `⭐${item.price}`)}</div>
+          <div style="border:2px solid ${equipped ? 'var(--primary)' : rarityColor}; border-radius:14px; padding:10px 4px; text-align:center; background:#FFF; cursor:pointer;" onclick="handleRouteSkinItemTap('${item.id}')">
+            <div style="font-size:30px; margin-bottom:4px;">${item.emoji}</div>
+            <div style="font-size:11px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(item.name)}</div>
+            <div style="font-size:10px; font-weight:700; color:${equipped ? 'var(--primary)' : 'var(--text-sub)'};">${equipped ? '✓ 적용됨' : (owned ? '보유중' : `⭐${item.price}`)}</div>
           </div>
         `;
       }
@@ -2573,64 +2572,66 @@
       // 이름을 드롭다운으로 골라 적용만 한다(직접 아이템을 고르지 않음 - applyRouteSkinPreset 참고).
       function renderSkinStudio() {
         const draft = state.skinStudioDraft;
-        const previewData = { title: '내 루트 미리보기', purpose: ROUTE_PURPOSES[0], skin: draft.skin };
+        const previewData = { title: '나의 트레일 경로', purpose: ROUTE_PURPOSES[0], skin: draft.skin };
+        const currentPart = ROUTE_SKIN_PARTS.find(p => p.key === draft.skinTab) || ROUTE_SKIN_PARTS[0];
+        const itemsForPart = state.routeSkinShop.items.filter(i => i.part === draft.skinTab);
+
         let html = `
-          <div style="background:#FFF; border-radius:18px; padding:16px; border:1px solid var(--border); margin-bottom:14px; display:flex; flex-direction:column; gap:10px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div style="font-size:15px; font-weight:900;">⭐ 스킨 꾸미기 - 별사탕 샵</div>
-              <div style="font-size:12px; font-weight:800; color:var(--primary);">내 별사탕: ⭐ ${state.user.points}</div>
-            </div>
-            <div style="font-size:12px; color:var(--text-sub);">루트 카드에 쓸 배경·프레임·핀·뱃지·스티커·날씨 이펙트를 꾸미고 이름으로 저장해두면, 새 루트를 만들 때 드롭다운에서 바로 골라 적용할 수 있어요.</div>
+          <div style="font-size:18px; font-weight:900; margin-bottom:14px;">🎨 경로 커스텀 상점</div>
 
-            <div style="display:grid; grid-template-columns:112px 1fr; gap:10px; align-items:start;">
-              <div>${renderRouteSkinPreviewCard(previewData)}</div>
-              <div style="min-width:0;">
-                <div class="filter-scroll" style="margin-bottom:8px;">
-                  ${ROUTE_SKIN_PARTS.map(p => `
-                    <div class="filter-chip sub-chip ${draft.skinTab === p.key ? 'active' : ''}" onclick="selectRouteSkinTab('${p.key}')">${p.emoji} ${p.label}${draft.skin[p.key] ? ' ✓' : ''}</div>
-                  `).join('')}
-                </div>
-                <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; max-height:220px; overflow-y:auto;">
-                  ${state.routeSkinShop.items.filter(i => i.part === draft.skinTab).map(item => renderRouteSkinShopItem(item, draft)).join('')}
-                  ${state.routeSkinShop.loaded && state.routeSkinShop.items.filter(i => i.part === draft.skinTab).length === 0 ? `<div style="grid-column:1/-1; text-align:center; color:var(--text-sub); font-size:12px; padding:10px;">아이템을 불러오지 못했어요.</div>` : ''}
-                </div>
-              </div>
-            </div>
+          <div style="font-size:13px; font-weight:800; color:var(--text-sub); margin-bottom:8px;">내 경로 미리보기</div>
+          <div style="margin-bottom:16px;">${renderRouteSkinPreviewCard(previewData)}</div>
 
-            ${state.ui.skinPresetNameDraft !== null ? `
-              <div style="display:flex; gap:6px;">
-                <input type="text" placeholder="스킨 이름 (예: 파스텔 감성)" value="${esc(state.ui.skinPresetNameDraft)}" maxlength="16" oninput="state.ui.skinPresetNameDraft=this.value" style="flex:1; min-width:0; border:1px solid var(--border); border-radius:10px; padding:9px 10px; font-size:12px;" />
-                <button class="cta-btn" style="padding:9px 12px; font-size:12px; flex-shrink:0;" onclick="confirmSaveRouteSkinPreset()">저장</button>
-                <button class="btn-secondary" style="padding:9px 10px; font-size:12px; flex-shrink:0;" onclick="cancelSaveRouteSkinPreset()">취소</button>
+          <div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:2px; margin-bottom:14px;">
+            ${ROUTE_SKIN_PARTS.map(p => `
+              <div onclick="selectRouteSkinTab('${p.key}')" style="flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:2px; padding:8px 14px; border-radius:14px; cursor:pointer; background:${draft.skinTab === p.key ? 'var(--primary)' : '#F5F5F0'};">
+                <span style="font-size:18px;">${p.emoji}</span>
+                <span style="font-size:10px; font-weight:800; white-space:nowrap; color:${draft.skinTab === p.key ? '#FFF' : 'var(--text)'};">${p.label}${draft.skin[p.key] ? ' ✓' : ''}</span>
               </div>
-            ` : `
-              <button class="cta-btn" style="padding:11px; font-size:13px; opacity:${Object.keys(draft.skin).length === 0 ? '0.5' : '1'};" onclick="startSaveRouteSkinPreset()">💾 현재 스킨을 이름으로 저장</button>
-            `}
+            `).join('')}
           </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="font-size:14px; font-weight:900;">${currentPart.label} 선택</div>
+            <div style="font-size:12px; color:var(--text-sub);">${itemsForPart.length}개</div>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-bottom:16px;">
+            ${itemsForPart.map(item => renderRouteSkinShopItem(item, draft)).join('')}
+            ${state.routeSkinShop.loaded && itemsForPart.length === 0 ? `<div style="grid-column:1/-1; text-align:center; color:var(--text-sub); font-size:12px; padding:10px;">아이템을 불러오지 못했어요.</div>` : ''}
+          </div>
+
+          <div style="font-size:14px; font-weight:900; margin-bottom:8px;">저장한 스킨${state.routeSkinPresets.length ? ` (${state.routeSkinPresets.length}개)` : ''}</div>
         `;
 
-        html += `<div style="font-size:13px; font-weight:900; margin-bottom:8px;">🗂️ 저장한 스킨${state.routeSkinPresets.length ? ` (${state.routeSkinPresets.length}개)` : ''}</div>`;
         if (state.routeSkinPresets.length === 0) {
           html += `
-            <div style="text-align:center; padding:30px 20px; color:var(--text-sub); background:#FFF; border-radius:18px; border:1px solid var(--border); font-size:12px; line-height:1.6;">
-              아직 저장한 스킨이 없어요.<br/>위에서 스킨을 꾸미고 이름으로 저장해보세요!
+            <div style="text-align:center; padding:26px 20px; color:var(--text-sub); background:#FAFAF8; border-radius:16px; border:1px dashed var(--border); font-size:12px; line-height:1.6; margin-bottom:16px;">
+              📦 저장한 스킨이 없어요<br/>커스텀한 디자인을 저장하면 여기에 표시돼요
             </div>
           `;
         } else {
-          html += `<div style="display:flex; flex-direction:column; gap:8px;">`;
+          html += `<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">`;
           html += state.routeSkinPresets.map(p => `
             <div style="display:flex; align-items:center; gap:10px; padding:10px; background:#FFF; border:1px solid var(--border); border-radius:14px;">
               <div style="font-size:20px; flex-shrink:0;">🎨</div>
-              <div style="flex:1; min-width:0;">
-                <div style="font-size:13px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(p.name)}</div>
-                <div style="font-size:11px; color:var(--text-sub);">${Object.keys(p.skin).length}개 파츠 적용</div>
-              </div>
+              <div style="flex:1; min-width:0; font-size:13px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(p.name)}</div>
               <button class="step-mini-btn" onclick="loadSkinPresetForEditing('${esc(p.id)}')">✏️ 불러오기</button>
               <button class="step-mini-btn" onclick="deleteRouteSkinPreset('${esc(p.id)}')">🗑️ 삭제</button>
             </div>
           `).join('');
           html += `</div>`;
         }
+
+        html += state.ui.skinPresetNameDraft !== null ? `
+          <div style="display:flex; gap:6px;">
+            <input type="text" placeholder="스킨 이름 (예: 파스텔 감성)" value="${esc(state.ui.skinPresetNameDraft)}" maxlength="16" oninput="state.ui.skinPresetNameDraft=this.value" style="flex:1; min-width:0; border:1px solid var(--border); border-radius:10px; padding:9px 10px; font-size:12px;" />
+            <button class="cta-btn" style="padding:9px 12px; font-size:12px; flex-shrink:0;" onclick="confirmSaveRouteSkinPreset()">저장</button>
+            <button class="btn-secondary" style="padding:9px 10px; font-size:12px; flex-shrink:0;" onclick="cancelSaveRouteSkinPreset()">취소</button>
+          </div>
+        ` : `
+          <button class="cta-btn" style="width:100%; padding:13px; font-size:14px; opacity:${Object.keys(draft.skin).length === 0 ? '0.5' : '1'};" onclick="startSaveRouteSkinPreset()">🏷️ 저장하기</button>
+        `;
+
         return html;
       }
 
