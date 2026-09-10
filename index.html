@@ -4844,7 +4844,12 @@
       // back-button both need. Returns true if something was actually closed.
       function closeTopmostOverlay() {
         if (state.ui.loginSheet && !state.user.isLoggedIn) return false; // 최초 로그인 유도는 닫지 않음
-        if (state.ui.photoLightbox) {
+        if (state.ui.photoLightbox && _lightboxZoom.scale > 1) {
+          // 확대된 상태에서 뒤로가기/Esc는 사진 보기 자체를 나가지 않고 원래 크기로 축소만 한다.
+          // render()가 다시 history entry를 채워 넣으므로(2d), 다음 뒤로가기에서 진짜로 닫힌다.
+          resetLightboxZoom();
+          render();
+        } else if (state.ui.photoLightbox) {
           closePhotoLightbox();
         } else if (state.ui.chatSheet) {
           closeRouteChat();
