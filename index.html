@@ -2351,7 +2351,7 @@
         }
         // filteredInput()이 타이핑 중 이미 걸러내지만, 붙여넣기 등으로 oninput을 안 거쳤을 가능성에
         // 대비해 저장 직전에도 한 번 더 확인한다 (아래 "기타" 커스텀 카테고리 체크와 같은 이유).
-        if (containsBannedWord(name) || containsBannedWord(subtitle) || containsBannedWord(description) || containsBannedWord(photoCaption)) {
+        if ([name, subtitle, arrivalTime, stayDuration, distanceFromPrev, address, description, costRaw, photoCaption].some(containsBannedWord)) {
           showToast('부적절한 단어는 사용할 수 없어요.');
           return;
         }
@@ -2420,8 +2420,8 @@
           showToast('루트 제목을 입력해주세요.');
           return;
         }
-        if (containsBannedWord(title)) {
-          showToast('루트 제목에 부적절한 단어가 포함되어 있어요.');
+        if ([title, distance, time, budgetRaw].some(containsBannedWord)) {
+          showToast('부적절한 단어는 사용할 수 없어요.');
           return;
         }
         // "기타" 커스텀 테마 - handleCustomPurposeInput()이 타이핑 중 이미 걸러내지만, 붙여넣기 등으로
@@ -5007,9 +5007,9 @@
                 </div>
 
                 <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
-                  <input type="text" id="builder-distance" placeholder="총 거리 (예: 1.5km)" value="${esc(rb.distance)}" oninput="state.ui.routeBuilder.distance=this.value" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
-                  <input type="text" id="builder-time" placeholder="소요시간 (예: 40분)" value="${esc(rb.time)}" oninput="state.ui.routeBuilder.time=this.value" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
-                  <input type="text" id="builder-budget" placeholder="예상비용(원)" value="${esc(rb.budget)}" oninput="state.ui.routeBuilder.budget=this.value" inputmode="numeric" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
+                  <input type="text" id="builder-distance" placeholder="총 거리 (예: 1.5km)" value="${esc(rb.distance)}" oninput="filteredInput(this, 'ui.routeBuilder.distance')" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
+                  <input type="text" id="builder-time" placeholder="소요시간 (예: 40분)" value="${esc(rb.time)}" oninput="filteredInput(this, 'ui.routeBuilder.time')" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
+                  <input type="text" id="builder-budget" placeholder="예상비용(원)" value="${esc(rb.budget)}" oninput="filteredInput(this, 'ui.routeBuilder.budget')" inputmode="numeric" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
                 </div>
 
                 <div style="border-top:1px solid var(--border); padding-top:14px; display:flex; flex-direction:column; gap:10px;">
@@ -5075,8 +5075,8 @@
                 <input type="text" id="stop-form-subtitle" placeholder="한 줄 소개" value="${esc(se.subtitle)}" oninput="filteredInput(this, 'ui.stopEditor.subtitle')" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
 
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-                  <input type="text" id="stop-form-time" placeholder="도착 예정 시간" value="${esc(se.arrivalTime)}" oninput="state.ui.stopEditor.arrivalTime=this.value" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
-                  <input type="text" id="stop-form-duration" placeholder="체류 시간" value="${esc(se.stayDuration)}" oninput="state.ui.stopEditor.stayDuration=this.value" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
+                  <input type="text" id="stop-form-time" placeholder="도착 예정 시간" value="${esc(se.arrivalTime)}" oninput="filteredInput(this, 'ui.stopEditor.arrivalTime')" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
+                  <input type="text" id="stop-form-duration" placeholder="체류 시간" value="${esc(se.stayDuration)}" oninput="filteredInput(this, 'ui.stopEditor.stayDuration')" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
                 </div>
 
                 ${!isFirst ? `
@@ -5089,7 +5089,7 @@
                         </div>
                       `).join('')}
                     </div>
-                    <input type="text" id="stop-form-transit-distance" placeholder="예: 도보 7분 (450m)" value="${esc(se.distanceFromPrev)}" oninput="state.ui.stopEditor.distanceFromPrev=this.value" style="width:100%; border:1px solid var(--border); border-radius:10px; padding:8px 9px; font-size:12px; background:#FFF;" />
+                    <input type="text" id="stop-form-transit-distance" placeholder="예: 도보 7분 (450m)" value="${esc(se.distanceFromPrev)}" oninput="filteredInput(this, 'ui.stopEditor.distanceFromPrev')" style="width:100%; border:1px solid var(--border); border-radius:10px; padding:8px 9px; font-size:12px; background:#FFF;" />
                   </div>
                 ` : `<input type="hidden" id="stop-form-transit-distance" value="" />`}
 
@@ -5098,7 +5098,7 @@
                     <div style="font-size:12px; font-weight:800; color:var(--text-sub);">주소</div>
                     ${se.gps ? `<span style="font-size:11px; font-weight:800; color:#2DD4A0;">✓ GPS 연동됨</span>` : ''}
                   </div>
-                  <input type="text" id="stop-form-address" placeholder="예: 서울 성동구 서울숲길 15" value="${esc(se.address)}" oninput="state.ui.stopEditor.address=this.value" style="width:100%; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
+                  <input type="text" id="stop-form-address" placeholder="예: 서울 성동구 서울숲길 15" value="${esc(se.address)}" oninput="filteredInput(this, 'ui.stopEditor.address')" style="width:100%; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
                 </div>
 
                 <div style="padding:12px; border-radius:16px; background:#F8F8F6; border:1px solid var(--border); display:flex; flex-direction:column; gap:8px;">
@@ -5150,7 +5150,7 @@
                   ` : ''}
                 </div>
 
-                <input type="text" id="stop-form-cost" placeholder="예상 비용(원)" value="${esc(se.cost)}" oninput="state.ui.stopEditor.cost=this.value" inputmode="numeric" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px;" />
+                <input type="text" id="stop-form-cost" placeholder="예상 비용(원)" value="${esc(se.cost)}" oninput="filteredInput(this, 'ui.stopEditor.cost')" inputmode="numeric" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px;" />
 
                 <textarea id="stop-form-desc" placeholder="장소에 대한 소개나 추천 이유를 적어주세요." oninput="filteredInput(this, 'ui.stopEditor.description')" style="width:100%; height:56px; border-radius:12px; border:1px solid var(--border); padding:10px; font-size:12px; resize:none;">${esc(se.description)}</textarea>
 
