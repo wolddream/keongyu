@@ -322,6 +322,10 @@
          파괴/재생성돼야 하기 때문. -->
     <div id="route-map-host" style="display:none; width:100%; height:100%;"></div>
 
+    <!-- 지도 크게 보기 - 슬롯을 추적하는 위 호스트와 달리 항상 헤더(54px) 아래~화면 끝을 채우는
+         고정 위치라 세로 동기화가 필요 없다 (syncRouteMapPosition() 참고). -->
+    <div id="route-map-fullscreen-host" style="display:none; position:fixed; top:54px; left:0; right:0; bottom:0; z-index:150; background:#EEE;"></div>
+
     <script>
       // ==========================================
       // -1. Kakao SDK Init (6️⃣ 인증 & 카카오)
@@ -859,6 +863,8 @@
       }
 
       const STORAGE_KEY = 'keongyu_v1';
+      // Separate, tiny key holding just the login-critical user fields - see saveAuthSnapshot().
+      const AUTH_STORAGE_KEY = 'keongyu_auth_v1';
       const AVATAR_MAP = { bear: '🐻', cat: '🐱', puppy: '🐶', rabbit: '🐰', fox: '🦊', panda: '🐼', tiger: '🐯', koala: '🐨', hamster: '🐹', lion: '🦁' };
       const STICKER_MAP = { heart: '❤️', star: '⭐', fire: '🔥', clover: '🍀', sparkle: '✨', crown: '👑' };
       const THEME_MAP = { default: '#8B6CFF', mint: '#2DD4A0', peach: '#FF8C4B', pink: '#FF6B8A', yellow: '#FFC61C', blue: '#5BA9FF' };
@@ -1140,12 +1146,27 @@
         return route;
       }
 
+      // Reconciles a loaded state blob against the small AUTH_STORAGE_KEY snapshot - if the snapshot
+      // says logged in but the blob doesn't, the blob is stale (see saveAuthSnapshot()) and the
+      // snapshot wins. Applied to both the normal-load and fresh-default paths below.
+      function reconcileAuthSnapshot(loaded) {
+        try {
+          const authRaw = localStorage.getItem(AUTH_STORAGE_KEY);
+          if (!authRaw) return loaded;
+          const auth = JSON.parse(authRaw);
+          if (auth && auth.isLoggedIn && !loaded.user.isLoggedIn) {
+            Object.assign(loaded.user, auth);
+          }
+        } catch (e) {}
+        return loaded;
+      }
+
       function loadSavedState() {
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
-          if (raw) return JSON.parse(raw);
+          if (raw) return reconcileAuthSnapshot(JSON.parse(raw));
         } catch (e) {}
-        return {
+        return reconcileAuthSnapshot({
           user: {
             id: 'anon_' + Date.now(),
             name: '나',
@@ -1212,7 +1233,7 @@
           },
           deco: { items: [], ownedIds: [], creations: [], loaded: false }, // 서버 카탈로그/인벤토리/작품 캐시 (openDecoTab에서 채움)
           tempImages: []
-        };
+        });
       }
 
       const state = loadSavedState();
@@ -1249,6 +1270,7 @@
         if (state.filter.nearbyGps === undefined) state.filter.nearbyGps = null;
         if (state.ui.nearbyLoading === undefined) state.ui.nearbyLoading = false;
         if (state.ui.decoStudio === undefined) state.ui.decoStudio = null;
+        if (state.ui.mapFullscreen === undefined) state.ui.mapFullscreen = null;
         if (state.deco === undefined) state.deco = { items: [], ownedIds: [], creations: [], loaded: false };
         if (state.routeSkinShop === undefined) state.routeSkinShop = { items: [], ownedIds: [], loaded: false };
         if (state.challenge.todayCheck === undefined) state.challenge.todayCheck = null;
@@ -1298,7 +1320,25 @@
         return pruned;
       }
 
+      // Small, independent snapshot of just the login-critical user fields, saved on its own key.
+      // The full state blob keeps growing with route/deco photo data across a session and can hit
+      // localStorage's quota - when that happens saveState() below can silently fail to persist a
+      // fresh login (the in-memory session still looks logged in, but nothing was actually written),
+      // so a refresh lands back on the logged-out onboarding sheet. This snapshot is tiny enough to
+      // essentially always succeed, and loadSavedState()/reconcileAuthSnapshot() prefers it over a
+      // stale/failed big blob on the next load.
+      function saveAuthSnapshot() {
+        try {
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
+            id: state.user.id, name: state.user.name, avatar: state.user.avatar, email: state.user.email,
+            provider: state.user.provider, isLoggedIn: state.user.isLoggedIn,
+            kakaoLoggedIn: state.user.kakaoLoggedIn, kakaoProfileImage: state.user.kakaoProfileImage,
+          }));
+        } catch (e) {}
+      }
+
       function saveState() {
+        saveAuthSnapshot();
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
         } catch (e) {
@@ -3006,6 +3046,7 @@
 
       window.closeFollowRoute = function() {
         state.ui.followRouteId = null;
+        state.ui.mapFullscreen = null;
         if (state.ui.chatSheet) {
           if (_chatPollTimer) { clearInterval(_chatPollTimer); _chatPollTimer = null; }
           state.ui.chatSheet = null;
@@ -3037,6 +3078,8 @@
       let _routeMapInstance = null;
       let _routeMapOverlays = [];
       let _routeMapSignature = null; // route.id + gps 좌표 + 지도 관련 스킨의 해시 - 안 바뀌면 다시 안 그림
+      let _fullscreenMapInstance = null; // 지도 크게보기(#route-map-fullscreen-host) 전용 별도 인스턴스
+      let _fullscreenMapRouteId = null;
 
       // #route-map-host는 #root 밖에서 body의 직속 자식으로 영구히 살아있다 - render()가
       // #root.innerHTML을 통째로 재생성할 때마다 #route-map-slot(플레이스홀더 <div>)도 매번
@@ -3045,6 +3088,59 @@
       // host를 절대 옮기지 않고, 매 render() 끝에서 이 함수가 슬롯의 화면 좌표(getBoundingClientRect)
       // 를 읽어 position:fixed인 host를 그 위에 겹쳐 그린다 - 슬롯은 매번 새로 그려지는 빈
       // 자리표시자일 뿐이고, 실제 kakao.maps.Map은 host 위에서 단 한 번만 만들어진다.
+      // Repositions the fixed map host over the slot's current screen rect, and tells Kakao Maps to
+      // relayout if the size actually changed. Split out of ensureRouteMap() so it can also run from
+      // the scroll/resize listener below (see the "GPS 연결이 되었다가 안되었다가" comment there) -
+      // ensureRouteMap() itself only fires on render(), which a plain scroll/mobile browser chrome
+      // show-or-hide/on-screen-keyboard resize does NOT trigger, so without this the host could drift
+      // out of alignment with its slot (or Kakao Maps could keep rendering into a now-wrong-sized
+      // canvas) until the next unrelated render happened to fire.
+      function syncRouteMapPosition() {
+        const host = document.getElementById('route-map-host');
+        const slot = state.ui.followRouteId ? document.getElementById('route-map-slot') : null;
+        if (host && slot && host.style.display !== 'none') {
+          const rect = slot.getBoundingClientRect();
+          const newTop = rect.top + 'px', newLeft = rect.left + 'px', newWidth = rect.width + 'px', newHeight = rect.height + 'px';
+          const sizeChanged = host.style.width !== newWidth || host.style.height !== newHeight;
+          host.style.position = 'fixed';
+          host.style.top = newTop;
+          host.style.left = newLeft;
+          host.style.width = newWidth;
+          host.style.height = newHeight;
+          if (sizeChanged && _routeMapInstance) _routeMapInstance.relayout();
+        }
+
+        // 지도 크게보기(fullscreen) 호스트는 슬롯이 아니라 #app-frame(모바일 폭으로 가운데 정렬된
+        // 앱 프레임)의 가로 위치만 따라간다 - 세로는 항상 '헤더 아래 ~ 화면 끝'으로 고정이라 스크롤에
+        // 영향받지 않지만, 가로 위치는 창 크기(예: 데스크톱 브라우저 리사이즈)에 따라 바뀔 수 있다.
+        const fsHost = document.getElementById('route-map-fullscreen-host');
+        if (fsHost && state.ui.mapFullscreen && fsHost.style.display !== 'none') {
+          const frame = document.getElementById('app-frame');
+          if (frame) {
+            const fRect = frame.getBoundingClientRect();
+            const newLeft = fRect.left + 'px', newWidth = fRect.width + 'px';
+            const sizeChanged = fsHost.style.width !== newWidth;
+            fsHost.style.left = newLeft;
+            fsHost.style.width = newWidth;
+            if (sizeChanged && _fullscreenMapInstance) _fullscreenMapInstance.relayout();
+          }
+        }
+      }
+
+      // Re-syncs the map position(s) on scroll (capture phase - .route-timeline-scroll below the
+      // small map doesn't bubble a 'scroll' event to window) and on viewport resize (address
+      // bar/keyboard show or hide on mobile, orientation change). rAF-throttled since scroll can fire
+      // very frequently.
+      let _routeMapSyncQueued = false;
+      function queueRouteMapPositionSync() {
+        if ((!state.ui.followRouteId && !state.ui.mapFullscreen) || _routeMapSyncQueued) return;
+        _routeMapSyncQueued = true;
+        requestAnimationFrame(() => { _routeMapSyncQueued = false; syncRouteMapPosition(); });
+      }
+      window.addEventListener('scroll', queueRouteMapPositionSync, true);
+      window.addEventListener('resize', queueRouteMapPositionSync);
+      if (window.visualViewport) window.visualViewport.addEventListener('resize', queueRouteMapPositionSync);
+
       function ensureRouteMap() {
         const host = document.getElementById('route-map-host');
         if (!host) return;
@@ -3058,14 +3154,9 @@
         const route = state.routes.find(r => r.id === state.ui.followRouteId);
         if (!route) { host.style.display = 'none'; return; }
 
-        const rect = slot.getBoundingClientRect();
         host.style.display = 'block';
-        host.style.position = 'fixed';
-        host.style.top = rect.top + 'px';
-        host.style.left = rect.left + 'px';
-        host.style.width = rect.width + 'px';
-        host.style.height = rect.height + 'px';
         host.style.zIndex = 91; // .fullscreen-overlay(z-index:90) 바로 위 - 그 안에 있는 것처럼 보이게
+        syncRouteMapPosition();
 
         const gpsSteps = route.steps.filter(s => s.gps && typeof s.gps.lat === 'number' && typeof s.gps.lng === 'number');
         if (gpsSteps.length === 0) {
@@ -3095,12 +3186,11 @@
         });
       }
 
-      function drawRouteMap(host, route, gpsSteps) {
-        const kakao = window.kakao;
-        const center = new kakao.maps.LatLng(gpsSteps[0].gps.lat, gpsSteps[0].gps.lng);
-        const map = new kakao.maps.Map(host, { center, level: 6 });
-        _routeMapInstance = map;
-        _routeMapOverlays = []; // host.innerHTML='' (ensureRouteMap) already dropped the old map's DOM
+      // Draws the path/pins/map-style skin onto an already-created kakao.maps.Map - shared by the
+      // small inline map and the "지도 크게 보기" fullscreen map (openFullscreenRouteMap) so a
+      // route's skin looks identical in both. Returns the overlays it created.
+      function paintRouteMap(kakao, map, host, route, gpsSteps) {
+        const overlays = [];
 
         // map_style: 카카오맵은 벡터 타일 자체를 커스터마이징하는 무료 API가 없어 지도 컨테이너에
         // CSS filter를 입혀 스킨을 근사한다 - deco 시스템이 별도 이미지 에셋 없이 이모지만으로
@@ -3112,7 +3202,7 @@
         if (path.length > 1) {
           const lineIdx = routeSkinItemIndex(findRouteSkinItem(route.skin.route_line));
           const lineStyle = ROUTE_LINE_PALETTE[lineIdx >= 0 ? lineIdx : 0];
-          _routeMapOverlays.push(new kakao.maps.Polyline({
+          overlays.push(new kakao.maps.Polyline({
             map, path,
             strokeWeight: 4,
             strokeColor: lineStyle.color,
@@ -3126,7 +3216,7 @@
           const isStart = i === 0;
           const isEnd = i === gpsSteps.length - 1 && gpsSteps.length > 1;
           const emoji = isStart ? pinEmoji('pin_start', '🚩') : isEnd ? pinEmoji('pin_end', '🏁') : pinEmoji('pin_via', '📍');
-          _routeMapOverlays.push(new kakao.maps.CustomOverlay({
+          overlays.push(new kakao.maps.CustomOverlay({
             map,
             position: new kakao.maps.LatLng(s.gps.lat, s.gps.lng),
             content: `<div style="font-size:24px; transform:translateY(-70%);">${emoji}</div>`,
@@ -3138,6 +3228,88 @@
           path.forEach(p => bounds.extend(p));
           map.setBounds(bounds);
         }
+        return overlays;
+      }
+
+      // 지도 우상단에 '크게 보기' 버튼을 얹는다 - host.innerHTML='' 로 다시 그려질 때마다(ensureRouteMap
+      // 의 시그니처 변경 분기) 같이 지워지므로 drawRouteMap()이 매번 다시 붙인다. #route-map-host
+      // 자체(position:fixed, z-index:91)의 자식이라 지도 캔버스와 같은 쌓임 맥락 위에서 항상 보인다.
+      function appendMapExpandButton(host, routeId) {
+        const btn = document.createElement('button');
+        btn.className = 'icon-btn';
+        btn.title = '지도 크게 보기';
+        btn.style.cssText = 'position:absolute; top:8px; right:8px; z-index:5; width:30px; height:30px; font-size:14px; background:rgba(255,255,255,0.92);';
+        btn.textContent = '⤢';
+        btn.onclick = (e) => { e.stopPropagation(); openFullscreenRouteMap(routeId); };
+        host.appendChild(btn);
+      }
+
+      function drawRouteMap(host, route, gpsSteps) {
+        const kakao = window.kakao;
+        const center = new kakao.maps.LatLng(gpsSteps[0].gps.lat, gpsSteps[0].gps.lng);
+        const map = new kakao.maps.Map(host, { center, level: 6 });
+        _routeMapInstance = map;
+        _routeMapOverlays = paintRouteMap(kakao, map, host, route, gpsSteps);
+        appendMapExpandButton(host, route.id);
+      }
+
+      // ==========================================
+      // 지도 크게 보기 (Fullscreen Route Map)
+      // ==========================================
+      // 작은 인라인 지도와 같은 이유로 별도의 영구 호스트(#route-map-fullscreen-host, #root 밖)를
+      // 쓴다 - 다만 슬롯을 추적할 필요 없이 항상 헤더 바로 아래~화면 끝을 채우면 되므로 위치 동기화는
+      // 가로(app-frame 폭) 쪽만 필요하다 (syncRouteMapPosition() 참고). 작은 지도와 완전히 분리된
+      // 별도의 kakao.maps.Map 인스턴스를 쓴다 - 닫았다 열어도 서로의 pan/zoom 상태에 영향을 주지 않고,
+      // 신호(_routeMapSignature) 캐싱 로직도 서로 얽히지 않는다.
+      window.openFullscreenRouteMap = function(routeId) {
+        state.ui.mapFullscreen = { routeId };
+        render();
+      };
+
+      window.closeFullscreenRouteMap = function() {
+        state.ui.mapFullscreen = null;
+        const host = document.getElementById('route-map-fullscreen-host');
+        if (host) { host.style.display = 'none'; host.innerHTML = ''; }
+        _fullscreenMapInstance = null;
+        _fullscreenMapRouteId = null;
+        render();
+      };
+
+      function ensureFullscreenRouteMap() {
+        const host = document.getElementById('route-map-fullscreen-host');
+        if (!host) return;
+        if (!state.ui.mapFullscreen) { host.style.display = 'none'; return; }
+
+        const route = state.routes.find(r => r.id === state.ui.mapFullscreen.routeId);
+        if (!route) { host.style.display = 'none'; return; }
+
+        host.style.display = 'block';
+        syncRouteMapPosition();
+
+        const gpsSteps = route.steps.filter(s => s.gps && typeof s.gps.lat === 'number' && typeof s.gps.lng === 'number');
+        if (gpsSteps.length === 0) {
+          host.style.filter = '';
+          host.innerHTML = `<div style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-sub); font-size:13px; text-align:center; padding:0 20px; line-height:1.5;">📍 경유지에 GPS 정보가 없어<br/>지도를 표시할 수 없어요</div>`;
+          _fullscreenMapInstance = null;
+          _fullscreenMapRouteId = null;
+          return;
+        }
+
+        if (_fullscreenMapInstance && _fullscreenMapRouteId === route.id) return; // 이미 이 루트로 그려져 있음
+        _fullscreenMapRouteId = route.id;
+
+        loadKakaoMapsSdk().then(() => {
+          if (!state.ui.mapFullscreen || state.ui.mapFullscreen.routeId !== route.id) return;
+          host.innerHTML = '';
+          const kakao = window.kakao;
+          const center = new kakao.maps.LatLng(gpsSteps[0].gps.lat, gpsSteps[0].gps.lng);
+          const map = new kakao.maps.Map(host, { center, level: 6 });
+          _fullscreenMapInstance = map;
+          paintRouteMap(kakao, map, host, route, gpsSteps);
+        }).catch(err => {
+          console.warn('[route-map-fullscreen]', err);
+          host.innerHTML = `<div style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-sub); font-size:13px;">지도를 불러오지 못했어요</div>`;
+        });
       }
 
       window.openStepPhotoLightbox = function(routeId, stepIdx, photoIdx) {
@@ -4198,7 +4370,7 @@
                   ${collabRoutes.map(r => `
                     <div style="min-width:200px; background:#FFF; border-radius:16px; border:1px solid var(--border); padding:12px; display:flex; flex-direction:column; gap:8px;">
                       <div class="participants-stack">
-                        ${(r.participants || []).slice(0, 3).map(p => `<div class="avatar-wrapper" style="width:28px; height:28px; font-size:14px;">${p.avatar || hashNameToAvatar(p.name)}</div>`).join('')}
+                        ${(r.participants || []).slice(0, 3).map(p => `<div class="avatar-wrapper" style="width:28px; height:28px; font-size:14px;">${getAvatarDisplay(p.name)}</div>`).join('')}
                         ${(r.participants || []).length > 3 ? `<div class="avatar-wrapper" style="width:28px; height:28px; font-size:11px; font-weight:800;">+${r.participants.length - 3}</div>` : ''}
                       </div>
                       <div style="font-size:13px; font-weight:800; line-height:1.3;">${esc(r.title)}</div>
@@ -4427,6 +4599,23 @@
         // 6. Overlays & Sheets
         // ==========================================
 
+        // 지도 크게 보기 - 실제 지도는 #root 밖의 #route-map-fullscreen-host(ensureFullscreenRouteMap
+        // 참고)에서 그려지고, 여기서는 그 위에 얹히는 헤더(닫기 버튼)만 그린다.
+        if (state.ui.mapFullscreen) {
+          const fsRoute = state.routes.find(r => r.id === state.ui.mapFullscreen.routeId);
+          html += `
+            <div class="fullscreen-overlay" style="z-index:151; background:transparent; pointer-events:none;">
+              <div class="overlay-inner" style="background:transparent; pointer-events:none;">
+                <div style="pointer-events:auto; height:54px; flex-shrink:0; background:#FFF; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; padding:0 16px;">
+                  <button class="icon-btn" onclick="closeFullscreenRouteMap()">✕</button>
+                  <div style="font-size:14px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px;">🗺️ ${fsRoute ? esc(fsRoute.title) : '지도'}</div>
+                  <span style="width:36px;"></span>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
         // A. Follow Route Fullscreen Overlay - full scrollable timeline (all steps visible at once)
         if (state.ui.followRouteId) {
           const route = state.routes.find(r => r.id === state.ui.followRouteId) || state.routes[0];
@@ -4439,15 +4628,23 @@
           };
           const getStepVisual = (type) => STEP_VISUAL[type] || { bg: '#EDE7F6', color: 'var(--primary)', emoji: '📍' };
 
+          // 이 화면(루트 상세/따라가기)도 메인 피드·내 루트 카드와 같은 route.skin을 반영한다 -
+          // 예전엔 getRouteSkinVisuals()가 카드 3곳에서만 호출되고 여기선 전혀 안 쓰여서, 카드에서
+          // 보이던 배경/프레임/뱃지/스티커/날씨 이펙트가 정작 루트를 열면 사라져 보였다.
+          const skinV = getRouteSkinVisuals(route);
+          const skinAttrs = routeCardSkinAttrs(skinV, 'padding:14px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; background:#FFF');
+
           html += `
             <div class="fullscreen-overlay">
               <div class="overlay-inner">
                 <!-- Top Nav -->
-                <div style="padding:14px 16px; background:#FFF; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
+                <div class="${skinAttrs.cls}"${skinAttrs.style}>
                   <button class="icon-btn" onclick="closeFollowRoute()">✕</button>
                   <div style="display:flex; align-items:center; gap:6px; max-width:220px; overflow:hidden;">
                     <div class="avatar-wrapper" style="width:24px; height:24px; font-size:13px; flex-shrink:0;">${getAvatarDisplay(route.creator)}</div>
                     <div style="font-size:14px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(route.title)}</div>
+                    ${skinV.titleBadge}
+                    ${skinV.authorBadge}
                   </div>
                   <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
                     <span style="font-size:12px; font-weight:800; color:var(--primary);">✓ ${myCheckedCount}/${totalSteps}</span>
@@ -4456,13 +4653,15 @@
                     <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openShareSheet('${route.id}')" title="공유">↗</button>
                     <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openCollabSheet('${route.id}')" title="함께가기">👥</button>
                   </div>
+                  ${skinV.stickerHtml}
+                  ${skinV.weatherHtml}
                 </div>
 
                 ${route.isCollaborative ? `
                   <div style="padding:8px 16px; background:#FAFAF8; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
                     <div style="display:flex; align-items:center; gap:8px;">
                       <div class="participants-stack">
-                        ${participants.slice(0, 3).map(p => `<div class="avatar-wrapper" style="width:26px; height:26px; font-size:13px;">${p.avatar || hashNameToAvatar(p.name)}</div>`).join('')}
+                        ${participants.slice(0, 3).map(p => `<div class="avatar-wrapper" style="width:26px; height:26px; font-size:13px;">${getAvatarDisplay(p.name)}</div>`).join('')}
                         ${participants.length > 3 ? `<div class="avatar-wrapper" style="width:26px; height:26px; font-size:10px; font-weight:800;">+${participants.length - 3}</div>` : ''}
                       </div>
                       <span style="font-size:12px; font-weight:700; color:var(--text-sub);">👥 ${participants.length}명과 함께</span>
@@ -4543,7 +4742,7 @@
                               if (!route.isCollaborative && !isMe) return '';
                               return `
                                 <button class="cta-btn" style="padding:9px; font-size:12px; background:${pChecked ? '#2DD4A0' : (isMe ? 'var(--primary)' : '#EEE')}; color:${pChecked ? '#FFF' : (isMe ? '#FFF' : 'var(--text)')};" data-route-id="${esc(route.id)}" data-step="${idx}" data-name="${esc(p.name)}" onclick="${isMe ? 'gpsCheckInStep(this.dataset.routeId, Number(this.dataset.step))' : 'verifyParticipantGPS(this.dataset.routeId, Number(this.dataset.step), this.dataset.name)'}">
-                                  ${p.avatar || ''} ${isMe ? '나' : esc(p.name)} 인증 ${pChecked ? (isMe ? '✅ 완료 (탭하여 취소)' : '✅') : (isMe ? '📍 (+5⭐)' : '⏳')}
+                                  ${getAvatarDisplay(p.name)} ${isMe ? '나' : esc(p.name)} 인증 ${pChecked ? (isMe ? '✅ 완료 (탭하여 취소)' : '✅') : (isMe ? '📍 (+5⭐)' : '⏳')}
                                 </button>
                               `;
                             }).join('')}
@@ -5287,7 +5486,7 @@
                       <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; background:#F9F9F8; border-radius:12px;">
                         <div style="display:flex; align-items:center; gap:8px;">
                           <div style="position:relative;">
-                            <div class="avatar-wrapper" style="width:32px; height:32px; font-size:16px;">${p.avatar || hashNameToAvatar(p.name)}</div>
+                            <div class="avatar-wrapper" style="width:32px; height:32px; font-size:16px;">${getAvatarDisplay(p.name)}</div>
                             <div style="position:absolute; bottom:0; right:0; width:9px; height:9px; border-radius:50%; background:${p.isOnline ? 'var(--mint)' : '#CCC'}; border:2px solid #FFF;"></div>
                           </div>
                           <span style="font-size:13px; font-weight:700;">${esc(p.name)}${p.name === state.user.name ? ' (나)' : ''}</span>
@@ -5447,6 +5646,7 @@
         // 4c. 루트 따라가기 화면의 카카오맵 - #route-map-slot이 방금 새로 그려졌으니, 영구 지도
         // 요소를 그 안으로 옮기고 필요할 때만(신호가 바뀌었을 때만) 다시 그린다.
         ensureRouteMap();
+        ensureFullscreenRouteMap();
 
         // 4b. Reattach step-editor camera stream (innerHTML replacement drops the <video> element's srcObject)
         if (state.ui.stopEditor && state.ui.stopEditor.cameraOpen && window._stepMediaStream) {
@@ -5493,7 +5693,9 @@
       // back-button both need. Returns true if something was actually closed.
       function closeTopmostOverlay() {
         if (state.ui.loginSheet && !state.user.isLoggedIn) return false; // 최초 로그인 유도는 닫지 않음
-        if (state.ui.giftSheet) {
+        if (state.ui.mapFullscreen) {
+          closeFullscreenRouteMap();
+        } else if (state.ui.giftSheet) {
           closeGiftSheet();
         } else if (state.ui.photoLightbox && _lightboxZoom.scale > 1) {
           // 확대된 상태에서 뒤로가기/Esc는 사진 보기 자체를 나가지 않고 원래 크기로 축소만 한다.
@@ -5566,6 +5768,12 @@
         syncNotificationsFromServer();
         syncSubscriptionsFromServer();
         syncProfileFromServer();
+        // Previously only loaded when opening the route-builder/edit sheet - meant the main feed's
+        // and my-routes' route-skin decorations (card bg/frame/badges/sticker/weather) only rendered
+        // for a session that happened to have visited that screen first (getRouteSkinVisuals() needs
+        // state.routeSkinShop.items to resolve a route's skin ids to their rarity/price/emoji). Load
+        // it up front so every route card can show its skin from the very first render.
+        loadRouteSkinShopIfNeeded();
       });
     </script>
   </body>
