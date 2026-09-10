@@ -2936,6 +2936,15 @@
       // 결제창을 띄우고, 성공하면 반드시 서버(POST /api/points/verify)가 PortOne에 직접 물어
       // 결제 상태/금액을 확인한 뒤 돌려주는 잔액으로만 별사탕을 반영한다 - 이 앱의 다른 포인트
       // 지급(초대/체크인 등)과 달리 실제 결제가 걸려 있어 클라이언트가 보내는 값을 믿을 수 없다.
+      //
+      // PortOne 모바일 웹은 카카오페이를 REDIRECTION 창 방식으로만 지원한다 (PC의 IFRAME/POPUP과
+      // 달리 브라우저가 실제로 카카오페이 페이지로 이동했다가 돌아옴). redirectUrl 없이는 결제가
+      // 끝나도 돌아올 곳이 없어 그 화면에 갇히고 뒤로가기도 먹히지 않는다 - 신고된 "QR결제 화면에서
+      // 뒤로가기 안 됨" 증상이 이것. 그래서 여기서 반드시 redirectUrl을 지정하고, 이 함수의
+      // await 리턴(PC IFRAME/POPUP)과 페이지 재로딩 후 돌아오는 리다이렉트(모바일)를 모두 같은
+      // finishCharge()로 합류시킨다. 재로딩 후에는 이 함수 스코프의 pack/method가 사라지므로
+      // 결제 시작 직전에 localStorage에 최소 정보를 남겨두고, 돌아온 뒤 applyPaymentRedirectResult()
+      // (DOMContentLoaded에서 호출)가 그걸 읽어 finishCharge()를 이어서 호출한다.
       window.confirmCharge = async function() {
         const { pack, method } = state.ui.charge;
         if (!pack || !method) {
@@ -2954,38 +2963,59 @@
         }
 
         const wonAmount = parseInt(pack.won.replace(/[^0-9]/g, ''), 10);
+        const paymentId = `pay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const redirectUrl = `${window.location.origin}${window.location.pathname}?charge_return=1`;
+        try {
+          localStorage.setItem('keongyu_pending_charge', JSON.stringify({ paymentId, amount: pack.amount, won: pack.won }));
+        } catch (e) {}
+
         let payResponse;
         try {
           payResponse = await PortOne.requestPayment({
             storeId: PORTONE_STORE_ID,
             channelKey: PORTONE_CHANNEL_KEY,
-            paymentId: `pay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            paymentId,
             orderName: `별사탕 ${pack.amount}개`,
             totalAmount: wonAmount,
             currency: 'CURRENCY_KRW',
             customer: { customerId: state.user.id, fullName: state.user.name },
+            redirectUrl,
             ...PORTONE_PAY_METHODS[method],
           });
         } catch (err) {
+          try { localStorage.removeItem('keongyu_pending_charge'); } catch (e) {}
           showToast('결제창을 여는 데 실패했어요. 잠시 후 다시 시도해주세요.');
           return;
         }
 
-        if (!payResponse || payResponse.code) {
-          showToast((payResponse && payResponse.message) || '결제가 취소됐어요.');
+        // 모바일 REDIRECTION 방식은 여기 도달하지 못하고 페이지가 통째로 이동한다 - payResponse가
+        // 안 온 경우는 실패가 아니라 리다이렉트가 진행 중인 것뿐이므로 토스트 없이 조용히 반환.
+        if (!payResponse) return;
+
+        if (payResponse.code) {
+          try { localStorage.removeItem('keongyu_pending_charge'); } catch (e) {}
+          showToast(payResponse.message || '결제가 취소됐어요.');
           return;
         }
 
+        await finishCharge(payResponse.paymentId);
+      };
+
+      // PC(IFRAME/POPUP)의 즉시 완료 경로와 모바일(REDIRECTION)의 재로딩 후 복귀 경로가 모두
+      // 여기로 합류해 서버 검증 + 잔액 반영을 한 곳에서 처리한다. confirmCharge() 주석 참고.
+      async function finishCharge(paymentId) {
         try {
           const result = await apiJsonAwait('/api/points/verify', 'POST', {
-            payment_id: payResponse.paymentId,
+            payment_id: paymentId,
             user_id: state.user.id,
           });
           state.user.points = result.points;
-          showToast(`${pack.won} 결제 완료! 별사탕 ${pack.amount}개가 충전되었습니다. ⭐`);
+          showToast(`결제가 완료됐어요! 별사탕 ${result.points}개 보유 중이에요. ⭐`);
         } catch (err) {
           showToast('결제 확인에 실패했어요. 문제가 계속되면 문의해주세요.');
           return;
+        } finally {
+          try { localStorage.removeItem('keongyu_pending_charge'); } catch (e) {}
         }
 
         state.ui.charge = { pack: null, method: null };
@@ -2993,6 +3023,30 @@
         saveState();
         render();
       };
+
+      // confirmCharge()가 남긴 ?charge_return=1 + localStorage의 pending 결제 정보를 읽어,
+      // 모바일에서 카카오페이 REDIRECTION 결제가 끝나고 이 페이지로 돌아왔을 때를 감지한다.
+      // 정확한 실패 시 쿼리 파라미터명은 PortOne 문서에 명시돼 있지 않아 code 유무로만
+      // 성공/실패를 가른다 - 실제 기기 테스트 후 다르면 이 부분만 조정하면 된다.
+      function applyPaymentRedirectResult() {
+        const params = new URLSearchParams(window.location.search);
+        if (!params.has('charge_return')) return false;
+        history.replaceState(null, '', window.location.pathname + window.location.hash);
+
+        let pending = null;
+        try { pending = JSON.parse(localStorage.getItem('keongyu_pending_charge') || 'null'); } catch (e) {}
+        if (!pending) return false;
+
+        const code = params.get('code');
+        if (code) {
+          try { localStorage.removeItem('keongyu_pending_charge'); } catch (e) {}
+          showToast(params.get('message') || '결제가 취소됐어요.');
+          return false;
+        }
+
+        finishCharge(params.get('paymentId') || pending.paymentId);
+        return false;
+      }
 
       // 미션 기반 무료 언락: 특정 조건 달성 시 지정된 아이템을 무료로 지급
       const MISSION_DEFS = [
@@ -4759,6 +4813,9 @@
         // 카카오 authorize() 리다이렉트로 방금 돌아온 경우, 로그인 시트 강제 노출 여부를
         // 판단하기 전에 먼저 로그인 결과를 반영합니다.
         const justLoggedInViaKakao = applyKakaoLoginResult();
+
+        // 모바일에서 카카오페이 결제(REDIRECTION)를 마치고 돌아온 경우 서버 검증 + 잔액 반영.
+        applyPaymentRedirectResult();
 
         // 첫 진입 + 아직 로그인 안 함 + 익명으로 건너뛴 적 없으면 로그인 시트를 띄움 (익명 모드는 여전히 허용).
         let skipLogin = false;
