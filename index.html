@@ -1880,6 +1880,28 @@
         return BANNED_WORDS.some(w => normalized.includes(w.toLowerCase()));
       }
 
+      // 앱 전체 자유 텍스트 입력란(루트 제목/경유지명/메모/후기/채팅/선물 메시지 등)에 쓰는 공용
+      // 실시간 필터 - handleCustomPurposeInput()/handleCustomStopCategoryInput()과 같은 방식(금칙어가
+      // 걸리면 입력창을 이전 값으로 되돌리고 state는 건드리지 않음)을 모든 필드에 재사용할 수 있도록
+      // 일반화했다. path는 `state`부터의 점(.) 경로 문자열 (예: 'ui.routeBuilder.title').
+      function getStateAtPath(path) {
+        return path.split('.').reduce((o, k) => (o == null ? o : o[k]), state);
+      }
+      function setStateAtPath(path, value) {
+        const parts = path.split('.');
+        let obj = state;
+        for (let i = 0; i < parts.length - 1; i++) obj = obj[parts[i]];
+        obj[parts[parts.length - 1]] = value;
+      }
+      window.filteredInput = function(el, path) {
+        if (containsBannedWord(el.value)) {
+          el.value = getStateAtPath(path) || '';
+          showToast('부적절한 단어는 사용할 수 없어요.');
+          return;
+        }
+        setStateAtPath(path, el.value);
+      };
+
       const STOP_CATEGORY_PRESETS = [
         { type: 'food', label: '음식', emoji: '🍽️' },
         { type: 'coffee', label: '커피', emoji: '☕' },
@@ -2327,6 +2349,12 @@
           showToast('장소명을 입력해주세요.');
           return;
         }
+        // filteredInput()이 타이핑 중 이미 걸러내지만, 붙여넣기 등으로 oninput을 안 거쳤을 가능성에
+        // 대비해 저장 직전에도 한 번 더 확인한다 (아래 "기타" 커스텀 카테고리 체크와 같은 이유).
+        if (containsBannedWord(name) || containsBannedWord(subtitle) || containsBannedWord(description) || containsBannedWord(photoCaption)) {
+          showToast('부적절한 단어는 사용할 수 없어요.');
+          return;
+        }
         // "기타" 커스텀 카테고리 - handleCustomStopCategoryInput()이 타이핑 중 이미 걸러내지만, 붙여넣기
         // 등으로 oninput을 안 거쳤을 가능성에 대비해 저장 직전에도 한 번 더 확인한다.
         if (!STOP_CATEGORY_PRESETS.some(p => p.type === editor.category)) {
@@ -2390,6 +2418,10 @@
 
         if (!title) {
           showToast('루트 제목을 입력해주세요.');
+          return;
+        }
+        if (containsBannedWord(title)) {
+          showToast('루트 제목에 부적절한 단어가 포함되어 있어요.');
           return;
         }
         // "기타" 커스텀 테마 - handleCustomPurposeInput()이 타이핑 중 이미 걸러내지만, 붙여넣기 등으로
@@ -2614,6 +2646,7 @@
       window.confirmSaveRouteSkinPreset = function() {
         const name = (state.ui.skinPresetNameDraft || '').trim();
         if (!name) { showToast('스킨 이름을 입력해주세요.'); return; }
+        if (containsBannedWord(name)) { showToast('부적절한 단어는 사용할 수 없어요.'); return; }
         if (Object.keys(state.skinStudioDraft.skin).length === 0) { showToast('먼저 스킨을 1개 이상 꾸며주세요.'); return; }
         const preset = { id: 'skin_' + Date.now(), name, skin: { ...state.skinStudioDraft.skin } };
         state.routeSkinPresets.push(preset);
@@ -2720,7 +2753,7 @@
 
         html += state.ui.skinPresetNameDraft !== null ? `
           <div style="display:flex; gap:6px;">
-            <input type="text" placeholder="스킨 이름 (예: 파스텔 감성)" value="${esc(state.ui.skinPresetNameDraft)}" maxlength="16" oninput="state.ui.skinPresetNameDraft=this.value" style="flex:1; min-width:0; border:1px solid var(--border); border-radius:10px; padding:9px 10px; font-size:12px;" />
+            <input type="text" placeholder="스킨 이름 (예: 파스텔 감성)" value="${esc(state.ui.skinPresetNameDraft)}" maxlength="16" oninput="filteredInput(this, 'ui.skinPresetNameDraft')" style="flex:1; min-width:0; border:1px solid var(--border); border-radius:10px; padding:9px 10px; font-size:12px;" />
             <button class="cta-btn" style="padding:9px 12px; font-size:12px; flex-shrink:0;" onclick="confirmSaveRouteSkinPreset()">저장</button>
             <button class="btn-secondary" style="padding:9px 10px; font-size:12px; flex-shrink:0;" onclick="cancelSaveRouteSkinPreset()">취소</button>
           </div>
@@ -2793,6 +2826,7 @@
         const amount = parseInt(g.amount, 10);
         if (!Number.isFinite(amount) || amount < 5) { showToast('최소 5개부터 선물할 수 있어요.'); return; }
         if (state.user.points < amount) { showToast(`별사탕이 부족해요! (보유: ${state.user.points}개 / 필요: ${amount}개)`); return; }
+        if (containsBannedWord(g.message)) { showToast('부적절한 단어는 사용할 수 없어요.'); return; }
         const now = Date.now();
         if (now - _lastGiftSentAt < 3000) { showToast('잠시 후 다시 시도해주세요.'); return; }
         _lastGiftSentAt = now;
@@ -3325,6 +3359,10 @@
         const sheet = state.ui.chatSheet;
         const text = state.ui.chatDraft.trim();
         if (!sheet || !text) return;
+        if (containsBannedWord(text)) {
+          showToast('부적절한 단어는 보낼 수 없어요.');
+          return;
+        }
         const avatar = getAvatarDisplay(state.user.name);
         state.ui.chatMessages.push({
           id: 'local_' + Date.now(),
@@ -3803,6 +3841,10 @@
       window.generateCollabInvite = function(routeId) {
         const input = document.getElementById('collab-invite-name');
         const name = (input && input.value.trim()) || '친구';
+        if (containsBannedWord(name)) {
+          showToast('부적절한 단어는 사용할 수 없어요.');
+          return;
+        }
         const route = state.routes.find(r => r.id === routeId);
         if (!route) return;
         const code = Math.random().toString(36).slice(2, 6);
@@ -3942,6 +3984,10 @@
         const memo = document.getElementById('step-form-memo')?.value.trim();
         if (!name) {
           showToast('장소명을 입력해주세요.');
+          return;
+        }
+        if (containsBannedWord(name) || containsBannedWord(address) || containsBannedWord(memo)) {
+          showToast('부적절한 단어는 사용할 수 없어요.');
           return;
         }
         if (sheet.mode === 'add') {
@@ -4726,7 +4772,7 @@
                   ${GIFT_MESSAGE_PRESETS.map((m, i) => `
                     <div class="gift-msg-chip ${g.message === m ? 'selected' : ''}" onclick="selectGiftMessagePreset(${i})">${esc(m)}</div>
                   `).join('')}
-                  <textarea placeholder="직접 메시지 입력" oninput="state.ui.giftSheet.message=this.value" style="width:100%; border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; resize:none; min-height:44px;">${esc(g.message)}</textarea>
+                  <textarea placeholder="직접 메시지 입력" oninput="filteredInput(this, 'ui.giftSheet.message')" style="width:100%; border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; resize:none; min-height:44px;">${esc(g.message)}</textarea>
                 </div>
 
                 <button class="cta-btn" style="position:relative; padding:14px; font-size:14px; background:linear-gradient(135deg, #FFD700, #FFA500); color:#4A3300;" onclick="sendCandyGift()">⭐ ${amount || 0}개 선물하기</button>
@@ -4796,7 +4842,7 @@
                     }).join('')}
                 </div>
                 <div style="padding:10px 12px; background:#FFF; border-top:1px solid var(--border); display:flex; gap:8px;">
-                  <input id="chat-input" type="text" placeholder="메시지 입력..." value="${esc(state.ui.chatDraft)}" oninput="state.ui.chatDraft=this.value" onkeydown="handleChatInputKey(event)" style="flex:1; border:1px solid var(--border); border-radius:20px; padding:10px 14px; font-size:13px; min-width:0;" />
+                  <input id="chat-input" type="text" placeholder="메시지 입력..." value="${esc(state.ui.chatDraft)}" oninput="filteredInput(this, 'ui.chatDraft')" onkeydown="handleChatInputKey(event)" style="flex:1; border:1px solid var(--border); border-radius:20px; padding:10px 14px; font-size:13px; min-width:0;" />
                   <button class="cta-btn" style="padding:10px 16px; font-size:13px; flex-shrink:0;" onclick="sendRouteChatMessage()">전송</button>
                 </div>
               </div>
@@ -4920,7 +4966,7 @@
                 </div>
                 <div style="font-size:12px; color:var(--text-sub); margin-top:-10px;">${rb.editingRouteId ? '경유지를 추가/수정/삭제하고 저장해주세요.' : '경유지를 순서대로 추가해서 나만의 루트를 완성해보세요.'}</div>
 
-                <input type="text" id="builder-title" placeholder="루트 제목 (예: 성수 감성 카페 투어)" value="${esc(rb.title)}" oninput="state.ui.routeBuilder.title=this.value" style="border:1px solid var(--border); border-radius:12px; padding:11px 12px; font-size:14px; font-weight:700;" />
+                <input type="text" id="builder-title" placeholder="루트 제목 (예: 성수 감성 카페 투어)" value="${esc(rb.title)}" oninput="filteredInput(this, 'ui.routeBuilder.title')" style="border:1px solid var(--border); border-radius:12px; padding:11px 12px; font-size:14px; font-weight:700;" />
 
                 <div>
                   <div style="font-size:12px; font-weight:800; color:var(--text-sub); margin-bottom:6px;">테마</div>
@@ -5025,8 +5071,8 @@
                   ` : ''}
                 </div>
 
-                <input type="text" id="stop-form-name" placeholder="장소명 *" value="${esc(se.name)}" oninput="state.ui.stopEditor.name=this.value" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:14px; font-weight:700;" />
-                <input type="text" id="stop-form-subtitle" placeholder="한 줄 소개" value="${esc(se.subtitle)}" oninput="state.ui.stopEditor.subtitle=this.value" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
+                <input type="text" id="stop-form-name" placeholder="장소명 *" value="${esc(se.name)}" oninput="filteredInput(this, 'ui.stopEditor.name')" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:14px; font-weight:700;" />
+                <input type="text" id="stop-form-subtitle" placeholder="한 줄 소개" value="${esc(se.subtitle)}" oninput="filteredInput(this, 'ui.stopEditor.subtitle')" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
 
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
                   <input type="text" id="stop-form-time" placeholder="도착 예정 시간" value="${esc(se.arrivalTime)}" oninput="state.ui.stopEditor.arrivalTime=this.value" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
@@ -5100,13 +5146,13 @@
                         </div>
                       `).join('')}
                     </div>
-                    <input type="text" id="stop-form-photo-caption" placeholder="사진 설명" value="${esc(se.photoCaption)}" oninput="state.ui.stopEditor.photoCaption=this.value" style="border:1px solid var(--border); border-radius:10px; padding:8px 10px; font-size:12px;" />
+                    <input type="text" id="stop-form-photo-caption" placeholder="사진 설명" value="${esc(se.photoCaption)}" oninput="filteredInput(this, 'ui.stopEditor.photoCaption')" style="border:1px solid var(--border); border-radius:10px; padding:8px 10px; font-size:12px;" />
                   ` : ''}
                 </div>
 
                 <input type="text" id="stop-form-cost" placeholder="예상 비용(원)" value="${esc(se.cost)}" oninput="state.ui.stopEditor.cost=this.value" inputmode="numeric" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px;" />
 
-                <textarea id="stop-form-desc" placeholder="장소에 대한 소개나 추천 이유를 적어주세요." oninput="state.ui.stopEditor.description=this.value" style="width:100%; height:56px; border-radius:12px; border:1px solid var(--border); padding:10px; font-size:12px; resize:none;">${esc(se.description)}</textarea>
+                <textarea id="stop-form-desc" placeholder="장소에 대한 소개나 추천 이유를 적어주세요." oninput="filteredInput(this, 'ui.stopEditor.description')" style="width:100%; height:56px; border-radius:12px; border:1px solid var(--border); padding:10px; font-size:12px; resize:none;">${esc(se.description)}</textarea>
 
                 <button class="cta-btn" style="padding:12px; font-size:14px;" onclick="saveStopEditor()">${se.editingIndex === null ? '경유지 등록' : '수정 완료'}</button>
               </div>
@@ -5130,7 +5176,7 @@
                 </div>
 
                 <!-- Review input -->
-                <textarea id="review-input" placeholder="이 루트의 솔직한 한줄 후기를 남겨보세요! (+5⭐)" style="width:100%; height:70px; border-radius:12px; border:1px solid var(--border); padding:10px; font-size:13px; resize:none;" oninput="state.ui.review.text=this.value">${esc(state.ui.review.text)}</textarea>
+                <textarea id="review-input" placeholder="이 루트의 솔직한 한줄 후기를 남겨보세요! (+5⭐)" style="width:100%; height:70px; border-radius:12px; border:1px solid var(--border); padding:10px; font-size:13px; resize:none;" oninput="filteredInput(this, 'ui.review.text')">${esc(state.ui.review.text)}</textarea>
 
                 <!-- Review photos -->
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
