@@ -2035,6 +2035,20 @@
         return siblings.findIndex(i => i.id === item.id);
       }
 
+      // 애니메이션이 있는 아이템(날씨 파티클/도는 프레임/홀로그램 필터)인지 - 샵 그리드에서
+      // 등급 색과는 별도로 테두리 색을 다르게 줘서(ROUTE_SKIN_DYNAMIC_COLOR) 장착 전에도
+      // "이건 움직인다"를 한눈에 구분할 수 있게 한다.
+      const ROUTE_SKIN_DYNAMIC_COLOR = '#22D3EE';
+      function isRouteSkinItemDynamic(item) {
+        if (!item) return false;
+        const idx = routeSkinItemIndex(item);
+        if (idx < 0) return false;
+        if (item.part === 'weather_effect') return !!WEATHER_PALETTE[idx];
+        if (item.part === 'frame') return !!FRAME_RUNNER_PALETTE[idx];
+        if (item.part === 'filter_aura') return idx === 11; // route-skin-holo-filter
+        return false;
+      }
+
       // route.skin의 12파츠를 실제 카드 CSS/HTML로 변환. 홈 피드 카드, 내 루트 카드, 업로드
       // 미리보기 카드가 전부 이 함수 하나로 렌더링되어야 미리보기와 실제 화면이 어긋나지 않는다.
       function getRouteSkinVisuals(route) {
@@ -2640,6 +2654,10 @@
         const owned = state.routeSkinShop.ownedIds.includes(item.id);
         const equipped = rb.skin[item.part] === item.id;
         const rarityColor = RARITY_COLORS[item.rarity] || '#9CA3AF';
+        // 움직이는 이펙트가 있는 아이템은 등급 색 대신(장착 전 기준) ROUTE_SKIN_DYNAMIC_COLOR
+        // 테두리 + 코너에 ✨ 표시를 얹어서, 이름을 안 읽어도 "이건 움직인다"가 바로 보이게 한다.
+        const dynamic = isRouteSkinItemDynamic(item);
+        const borderColor = equipped ? 'var(--primary)' : (dynamic ? ROUTE_SKIN_DYNAMIC_COLOR : rarityColor);
         // min-width:0 + overflow:hidden on the grid item itself (not just the inner name text) -
         // some item names are long unbroken strings (e.g. "kyungyu의 찢어진 편지지 프레임" under
         // frame), and a CSS grid item's automatic minimum width defaults to its content's min-content
@@ -2647,7 +2665,8 @@
         // name forced its whole grid row (and with it the page) wider than the app frame instead of
         // the name just ellipsis-truncating inside its 1fr column.
         return `
-          <div style="min-width:0; overflow:hidden; border:2px solid ${equipped ? 'var(--primary)' : rarityColor}; border-radius:14px; padding:10px 4px; text-align:center; background:#FFF; cursor:pointer;" onclick="handleRouteSkinItemTap('${item.id}')">
+          <div style="position:relative; min-width:0; overflow:hidden; border:2px solid ${borderColor}; border-radius:14px; padding:10px 4px; text-align:center; background:#FFF; cursor:pointer;" onclick="handleRouteSkinItemTap('${item.id}')" title="${dynamic ? '움직이는 이펙트' : ''}">
+            ${dynamic ? `<span style="position:absolute; top:2px; right:4px; font-size:11px;">✨</span>` : ''}
             <div style="font-size:30px; margin-bottom:4px;">${item.emoji}</div>
             <div style="font-size:11px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(item.name)}</div>
             <div style="font-size:10px; font-weight:700; color:${equipped ? 'var(--primary)' : 'var(--text-sub)'};">${equipped ? '✓ 적용됨' : (owned ? '보유중' : `⭐${item.price}`)}</div>
