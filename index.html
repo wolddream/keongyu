@@ -3108,6 +3108,21 @@
           host.style.width = newWidth;
           host.style.height = newHeight;
           if (sizeChanged && _routeMapInstance) _routeMapInstance.relayout();
+
+          // 지도가 이제 .route-timeline-scroll 안에서 함께 스크롤된다 - 다만 실제 <div>(host)는
+          // position:fixed라 그 스크롤 영역의 overflow:hidden에 의해 자동으로 잘리지 않으므로,
+          // 스크롤로 슬롯이 뷰포트 밖으로 나간 만큼을 clip-path로 직접 잘라 자연스럽게 사라지게
+          // 한다 (지도 캔버스 자체를 리사이즈하는 게 아니라 시각적으로만 자르는 것이라 relayout이
+          // 필요 없고, 스크롤 중 매 프레임 호출돼도 가볍다).
+          const scrollBox = slot.closest('.route-timeline-scroll');
+          if (scrollBox) {
+            const box = scrollBox.getBoundingClientRect();
+            const clipTop = Math.max(0, box.top - rect.top);
+            const clipBottom = Math.max(0, rect.bottom - box.bottom);
+            host.style.clipPath = (clipTop || clipBottom) ? `inset(${clipTop}px 0px ${clipBottom}px 0px)` : '';
+          } else {
+            host.style.clipPath = '';
+          }
         }
 
         // 지도 크게보기(fullscreen) 호스트는 슬롯이 아니라 #app-frame(모바일 폭으로 가운데 정렬된
@@ -4675,17 +4690,19 @@
                   <div style="height:100%; width:${totalSteps ? Math.round((myCheckedCount / totalSteps) * 100) : 0}%; background:var(--mint); transition:width 0.3s;"></div>
                 </div>
 
-                <!-- 카카오맵 - 실제 <div>는 #root 밖에 영구적으로 살아있는 요소를 여기 슬롯으로
-                     이동시켜 넣는다(ensureRouteMap() 참고). 매 render()마다 #root.innerHTML을
-                     통째로 새로 만드는 이 앱 구조상, 지도 DOM을 render()로 직접 그리면 지도가
-                     열려있는 동안 일어나는 모든 무관한 렌더(채팅 폴링 등)마다 지도 인스턴스가
-                     파괴되고 다시 초기화돼야 해서 - 이 슬롯은 매번 새로 그려지는 빈 자리표시자일
-                     뿐이고, 실제 kakao.maps.Map은 이 슬롯 안으로 옮겨진 고정 요소 위에서 단 한
-                     번만 만들어진다. -->
-                <div id="route-map-slot" style="height:190px; flex-shrink:0; position:relative; background:#EEE;"></div>
-
-                <!-- Scrollable Timeline -->
+                <!-- Scrollable Timeline (지도도 이 안의 첫 항목이라 함께 스크롤된다) -->
                 <div class="route-timeline-scroll" style="padding:18px 16px 4px; flex:1; overflow-y:auto; overscroll-behavior:contain;">
+                  <!-- 카카오맵 - 실제 <div>는 #root 밖에 영구적으로 살아있는 요소를 여기 슬롯으로
+                       이동시켜 넣는다(ensureRouteMap() 참고). 매 render()마다 #root.innerHTML을
+                       통째로 새로 만드는 이 앱 구조상, 지도 DOM을 render()로 직접 그리면 지도가
+                       열려있는 동안 일어나는 모든 무관한 렌더(채팅 폴링 등)마다 지도 인스턴스가
+                       파괴되고 다시 초기화돼야 해서 - 이 슬롯은 매번 새로 그려지는 빈 자리표시자일
+                       뿐이고, 실제 kakao.maps.Map은 이 슬롯 안으로 옮겨진 고정 요소 위에서 단 한
+                       번만 만들어진다. syncRouteMapPosition()이 스크롤(캡처 단계)마다 위치를
+                       다시 맞춰주므로 지도가 타임라인과 함께 스크롤되는 것처럼 보인다. 음수
+                       margin으로 부모의 padding을 상쇄해 예전처럼 폭 전체를 채운다. -->
+                  <div id="route-map-slot" style="height:190px; margin:-18px -16px 18px; position:relative; background:#EEE;"></div>
+
                   ${route.steps.map((step, idx) => {
                     const sv = getStepVisual(step.type);
                     const isLast = idx === totalSteps - 1;
