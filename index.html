@@ -1271,6 +1271,7 @@
         if (state.ui.nearbyLoading === undefined) state.ui.nearbyLoading = false;
         if (state.ui.decoStudio === undefined) state.ui.decoStudio = null;
         if (state.ui.mapFullscreen === undefined) state.ui.mapFullscreen = null;
+        if (state.ui.checkinGpsLoading === undefined) state.ui.checkinGpsLoading = null;
         if (state.deco === undefined) state.deco = { items: [], ownedIds: [], creations: [], loaded: false };
         if (state.routeSkinShop === undefined) state.routeSkinShop = { items: [], ownedIds: [], loaded: false };
         if (state.challenge.todayCheck === undefined) state.challenge.todayCheck = null;
@@ -3551,6 +3552,23 @@
 
       // Follow overlay shows every step at once (scrollable timeline), so GPS check-in
       // targets an explicit step index rather than an implicit "current step".
+      const CHECKIN_MAX_DISTANCE_M = 500; // "나 인증"은 경유지 GPS 좌표에서 이 거리(m) 이내일 때만 허용
+
+      function finalizeGpsCheckIn(route, stepIdx, key) {
+        state.user.followCheckins[key] = true;
+        state.user.points += 5;
+        // Add comment
+        if (!route.comments) route.comments = [];
+        route.comments.unshift({
+          user: state.user.name,
+          text: `📍 [${state.user.name}] 스텝 ${stepIdx + 1} GPS 인증 완료! 발도장 꾹 ✨`
+        });
+        saveState();
+        showToast('스텝 GPS 인증 성공! ⭐+5 별사탕 적립');
+        render();
+        apiJson(`/api/routes/${encodeURIComponent(route.id)}/checkin`, 'POST', { user_id: state.user.id, user_name: state.user.name, step_index: stepIdx });
+      }
+
       window.gpsCheckInStep = function(routeId, stepIdx) {
         const route = state.routes.find(r => r.id === routeId);
         if (!route) return;
@@ -3566,18 +3584,42 @@
           apiJson(`/api/routes/${encodeURIComponent(routeId)}/checkin`, 'POST', { user_id: state.user.id, user_name: state.user.name, step_index: stepIdx });
           return;
         }
-        state.user.followCheckins[key] = true;
-        state.user.points += 5;
-        // Add comment
-        if (!route.comments) route.comments = [];
-        route.comments.unshift({
-          user: state.user.name,
-          text: `📍 [${state.user.name}] 스텝 ${stepIdx + 1} GPS 인증 완료! 발도장 꾹 ✨`
-        });
-        saveState();
-        showToast('스텝 GPS 인증 성공! ⭐+5 별사탕 적립');
+
+        if (state.ui.checkinGpsLoading) return; // 위치 확인 중 중복 탭 방지
+
+        const step = route.steps[stepIdx];
+        const stepGps = step && step.gps && typeof step.gps.lat === 'number' && typeof step.gps.lng === 'number' ? step.gps : null;
+        // 경유지에 GPS 좌표가 아예 없으면 거리 비교 자체가 불가능하니 예전처럼 탭만으로 인증 처리.
+        if (!stepGps) { finalizeGpsCheckIn(route, stepIdx, key); return; }
+
+        if (!navigator.geolocation) {
+          showToast('이 브라우저는 위치 정보를 지원하지 않아 거리 확인 없이 인증할게요.');
+          finalizeGpsCheckIn(route, stepIdx, key);
+          return;
+        }
+
+        state.ui.checkinGpsLoading = key;
         render();
-        apiJson(`/api/routes/${encodeURIComponent(routeId)}/checkin`, 'POST', { user_id: state.user.id, user_name: state.user.name, step_index: stepIdx });
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            state.ui.checkinGpsLoading = null;
+            const distM = Math.round(haversineDistanceKm(pos.coords.latitude, pos.coords.longitude, stepGps.lat, stepGps.lng) * 1000);
+            if (distM > CHECKIN_MAX_DISTANCE_M) {
+              showToast(`경유지와 너무 멀어요! (약 ${distM}m 떨어짐 · ${CHECKIN_MAX_DISTANCE_M}m 이내에서만 인증 가능해요) 📍`);
+              render();
+              return;
+            }
+            finalizeGpsCheckIn(route, stepIdx, key);
+          },
+          err => {
+            state.ui.checkinGpsLoading = null;
+            showToast(err.code === err.PERMISSION_DENIED
+              ? '위치 접근 권한이 거부되어 거리를 확인할 수 없어요. 브라우저 설정에서 위치 권한을 허용해주세요.'
+              : '현재 위치를 가져올 수 없어요. 잠시 후 다시 시도해주세요.');
+            render();
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+        );
       };
 
       // Demo-only: simulate a fellow participant checking in at a given step.
@@ -4757,9 +4799,10 @@
                               const pChecked = !!state.user.followCheckins[pKey];
                               const isMe = p.name === state.user.name;
                               if (!route.isCollaborative && !isMe) return '';
+                              const isCheckingLocation = isMe && state.ui.checkinGpsLoading === pKey;
                               return `
-                                <button class="cta-btn" style="padding:9px; font-size:12px; background:${pChecked ? '#2DD4A0' : (isMe ? 'var(--primary)' : '#EEE')}; color:${pChecked ? '#FFF' : (isMe ? '#FFF' : 'var(--text)')};" data-route-id="${esc(route.id)}" data-step="${idx}" data-name="${esc(p.name)}" onclick="${isMe ? 'gpsCheckInStep(this.dataset.routeId, Number(this.dataset.step))' : 'verifyParticipantGPS(this.dataset.routeId, Number(this.dataset.step), this.dataset.name)'}">
-                                  ${getAvatarDisplay(p.name)} ${isMe ? '나' : esc(p.name)} 인증 ${pChecked ? (isMe ? '✅ 완료 (탭하여 취소)' : '✅') : (isMe ? '📍 (+5⭐)' : '⏳')}
+                                <button class="cta-btn" style="padding:9px; font-size:12px; background:${pChecked ? '#2DD4A0' : (isMe ? 'var(--primary)' : '#EEE')}; color:${pChecked ? '#FFF' : (isMe ? '#FFF' : 'var(--text)')}; opacity:${isCheckingLocation ? '0.6' : '1'};" ${isCheckingLocation ? 'disabled' : ''} data-route-id="${esc(route.id)}" data-step="${idx}" data-name="${esc(p.name)}" onclick="${isMe ? 'gpsCheckInStep(this.dataset.routeId, Number(this.dataset.step))' : 'verifyParticipantGPS(this.dataset.routeId, Number(this.dataset.step), this.dataset.name)'}">
+                                  ${isCheckingLocation ? '📍 위치 확인 중...' : `${getAvatarDisplay(p.name)} ${isMe ? '나' : esc(p.name)} 인증 ${pChecked ? (isMe ? '✅ 완료 (탭하여 취소)' : '✅') : (isMe ? '📍 (+5⭐)' : '⏳')}`}
                                 </button>
                               `;
                             }).join('')}
