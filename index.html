@@ -5155,9 +5155,9 @@
 
                 <input type="text" id="stop-form-cost" placeholder="예상 비용(원)" value="${esc(se.cost)}" oninput="filteredInput(this, 'ui.stopEditor.cost')" inputmode="numeric" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px;" />
 
-                <textarea id="stop-form-desc" placeholder="장소에 대한 소개나 추천 이유를 적어주세요." oninput="filteredInput(this, 'ui.stopEditor.description')" style="width:100%; height:56px; border-radius:12px; border:1px solid var(--border); padding:10px; font-size:12px; resize:none;">${esc(se.description)}</textarea>
+                <textarea id="stop-form-desc" placeholder="장소에 대한 소개나 추천 이유를 적어주세요." rows="2" oninput="filteredInput(this, 'ui.stopEditor.description')" style="width:100%; height:68px; border-radius:12px; border:1px solid var(--border); padding:10px; font-size:13px; line-height:1.4; resize:none;">${esc(se.description)}</textarea>
 
-                <button class="cta-btn" style="padding:12px; font-size:14px;" onclick="saveStopEditor()">${se.editingIndex === null ? '경유지 등록' : '수정 완료'}</button>
+                <button class="cta-btn" style="padding:12px; font-size:14px; margin-top:8px;" onclick="saveStopEditor()">${se.editingIndex === null ? '경유지 등록' : '수정 완료'}</button>
               </div>
             </div>
           `;
