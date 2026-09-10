@@ -2711,7 +2711,7 @@
           <div style="font-size:13px; font-weight:800; color:var(--text-sub); margin-bottom:8px;">내 경로 미리보기</div>
           <div style="margin-bottom:16px;">${renderRouteSkinPreviewCard(previewData)}</div>
 
-          <div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:2px; margin-bottom:14px;">
+          <div class="skin-part-tabs" style="display:flex; gap:8px; overflow-x:auto; padding-bottom:2px; margin-bottom:14px;">
             ${ROUTE_SKIN_PARTS.map(p => `
               <div onclick="selectRouteSkinTab('${p.key}')" style="flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:2px; padding:8px 14px; border-radius:14px; cursor:pointer; background:${draft.skinTab === p.key ? 'var(--primary)' : '#F5F5F0'};">
                 <span style="font-size:18px;">${p.emoji}</span>
@@ -4027,11 +4027,14 @@
 
         // 1b. Preserve scroll position of the open sheet/overlay's scrollable regions.
         // root.innerHTML replacement below always recreates the DOM, which silently resets
-        // scrollTop to 0 on every one of them - felt as the screen "jumping" back up on every
-        // icon tap/toggle inside a sheet. Captured/restored in DOM order, which stays stable
-        // across a render() since the same state produces the same conditional structure.
-        const SCROLL_PRESERVE_SELECTOR = '.bottom-sheet, .route-timeline-scroll, .notif-list-scroll, .chat-message-list';
-        const savedScrollTops = Array.from(document.querySelectorAll(SCROLL_PRESERVE_SELECTOR)).map(el => el.scrollTop);
+        // scrollTop (and, for horizontally-scrolling rows like .skin-part-tabs, scrollLeft) to 0 on
+        // every one of them - felt as the screen "jumping" back up/left on every icon tap/toggle
+        // inside a sheet, or (the "꾸미기" 프레임/스티커 tabs bug) the part-tab row snapping back to
+        // its start every time a tab off to the right was tapped. Captured/restored in DOM order,
+        // which stays stable across a render() since the same state produces the same conditional
+        // structure.
+        const SCROLL_PRESERVE_SELECTOR = '.bottom-sheet, .route-timeline-scroll, .notif-list-scroll, .chat-message-list, .skin-part-tabs';
+        const savedScrollPositions = Array.from(document.querySelectorAll(SCROLL_PRESERVE_SELECTOR)).map(el => ({ top: el.scrollTop, left: el.scrollLeft }));
 
         // 2. Set theme color
         const themeColor = THEME_MAP[state.custom.equipped.theme] || '#8B6CFF';
@@ -5572,9 +5575,12 @@
         root.innerHTML = html;
 
         // 3b. Restore the scroll positions captured above (1b).
-        if (savedScrollTops.some(t => t)) {
+        if (savedScrollPositions.some(p => p.top || p.left)) {
           document.querySelectorAll(SCROLL_PRESERVE_SELECTOR).forEach((el, i) => {
-            if (savedScrollTops[i]) el.scrollTop = savedScrollTops[i];
+            const pos = savedScrollPositions[i];
+            if (!pos) return;
+            if (pos.top) el.scrollTop = pos.top;
+            if (pos.left) el.scrollLeft = pos.left;
           });
         }
 
