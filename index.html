@@ -1866,6 +1866,20 @@
       // ==========================================
       const ROUTE_PURPOSES = ['감성카페', '힐링·산책', '데이트', '작업·몰입', '야경·드라이브', '가성비'];
 
+      // "기타" 커스텀 테마 입력용 경량 욕설/19금 단어 필터 - 완전한 필터링 솔루션이 아니라(띄어쓰기,
+      // 특수문자 치환, 초성 등으로 쉽게 우회 가능) 일반적인 입력을 걸러내는 최소한의 방어선이다.
+      // 대소문자/공백 무시하고 부분 문자열로 매칭한다.
+      const BANNED_WORDS = [
+        '씨발', '시발', 'ㅅㅂ', '개새끼', '개새', '병신', 'ㅄ', '지랄', '좆', '좇', '존나', '존니',
+        '미친놈', '미친년', '걸레', '창녀', '창놈', '씹', '보지', '자지', '섹스', '性', '19금', '19禁',
+        '성인용', '야동', '음란', '폰섹', '性교', '性행위', '强간', '강간', 'fuck', 'shit', 'bitch',
+        'porn', 'sex', 'nsfw'
+      ];
+      function containsBannedWord(text) {
+        const normalized = (text || '').toLowerCase().replace(/\s+/g, '');
+        return BANNED_WORDS.some(w => normalized.includes(w.toLowerCase()));
+      }
+
       const STOP_CATEGORY_PRESETS = [
         { type: 'cafe', label: '카페', emoji: '☕' },
         { type: 'bakery', label: '베이커리', emoji: '🥐' },
@@ -2031,6 +2045,27 @@
         if (!state.ui.routeBuilder) return;
         state.ui.routeBuilder.purpose = purpose;
         render();
+      };
+
+      // "기타" 칩 - 미리 정해진 테마가 아니라 직접 입력하는 모드로 전환한다. rb.purpose를 빈 문자열로
+      // 바꿔서 render()가 커스텀 입력창을 보여주게 한다(ROUTE_PURPOSES에 없는 값이면 커스텀 모드로
+      // 판단 - 별도 플래그 없이도 "기타" 칩의 활성 여부를 알 수 있다).
+      window.selectCustomRouteBuilderPurpose = function() {
+        if (!state.ui.routeBuilder) return;
+        if (ROUTE_PURPOSES.includes(state.ui.routeBuilder.purpose)) state.ui.routeBuilder.purpose = '';
+        render();
+      };
+
+      // 커스텀 테마 입력 - 다른 텍스트 입력처럼 타이핑 중 render()를 부르지 않되, 욕설/19금 단어가
+      // 걸리면 그 글자가 반영되지 않도록 입력창 자체를 되돌린다(state는 원래 값 그대로 유지).
+      window.handleCustomPurposeInput = function(el) {
+        if (!state.ui.routeBuilder) return;
+        if (containsBannedWord(el.value)) {
+          el.value = state.ui.routeBuilder.purpose;
+          showToast('부적절한 단어는 테마 이름에 사용할 수 없어요.');
+          return;
+        }
+        state.ui.routeBuilder.purpose = el.value;
       };
 
       window.cancelRouteBuilder = function() {
@@ -2313,6 +2348,18 @@
         if (!title) {
           showToast('루트 제목을 입력해주세요.');
           return;
+        }
+        // "기타" 커스텀 테마 - handleCustomPurposeInput()이 타이핑 중 이미 걸러내지만, 붙여넣기 등으로
+        // oninput을 안 거쳤을 가능성에 대비해 저장 직전에도 한 번 더 확인한다.
+        if (!ROUTE_PURPOSES.includes(builder.purpose)) {
+          if (!builder.purpose.trim()) {
+            showToast('테마 이름을 입력해주세요.');
+            return;
+          }
+          if (containsBannedWord(builder.purpose)) {
+            showToast('테마 이름에 부적절한 단어가 포함되어 있어요.');
+            return;
+          }
         }
         if (builder.steps.length < 1) {
           showToast('경유지를 1개 이상 추가해주세요.');
@@ -4832,7 +4879,11 @@
                     ${ROUTE_PURPOSES.map(p => `
                       <div class="filter-chip sub-chip ${rb.purpose === p ? 'active' : ''}" onclick="setRouteBuilderPurpose('${p}')">${(PURPOSE_VISUAL[p] || {}).emoji || ''} ${p}</div>
                     `).join('')}
+                    <div class="filter-chip sub-chip ${!ROUTE_PURPOSES.includes(rb.purpose) ? 'active' : ''}" onclick="selectCustomRouteBuilderPurpose()">✏️ 기타</div>
                   </div>
+                  ${!ROUTE_PURPOSES.includes(rb.purpose) ? `
+                    <input type="text" placeholder="테마 이름을 입력해주세요 (예: 반려견 동반)" value="${esc(rb.purpose)}" maxlength="12" oninput="handleCustomPurposeInput(this)" style="margin-top:8px; width:100%; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
+                  ` : ''}
                 </div>
 
                 <div>
