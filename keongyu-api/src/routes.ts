@@ -28,6 +28,7 @@ interface RouteRow {
 	is_collaborative: number;
 	image_url: string | null;
 	tags_json: string | null;
+	skin_json: string | null;
 	created_at: string;
 }
 
@@ -81,6 +82,7 @@ function routeRowToClient(row: RouteRow, steps: ReturnType<typeof stepRowToClien
 		isCollaborative: !!row.is_collaborative,
 		image: row.image_url || null, // R2 key - client resolves via /api/images/:key
 		steps,
+		skin: safeJsonParse<Record<string, string>>(row.skin_json, {}),
 		createdAt: row.created_at,
 	};
 }
@@ -105,7 +107,7 @@ async function loadStepsByRouteIds(env: Env, routeIds: string[]): Promise<Map<st
 export async function handleGetRoutes(env: Env): Promise<Response> {
 	const { results } = await env.DB.prepare(
 		`SELECT id, creator_id, creator_name, creator_avatar, title, purpose, distance, time, budget, likes,
-		        is_public, is_collaborative, image_url, tags_json, created_at
+		        is_public, is_collaborative, image_url, tags_json, skin_json, created_at
 		 FROM routes ORDER BY created_at DESC LIMIT 100`
 	).all<RouteRow>();
 
@@ -117,7 +119,7 @@ export async function handleGetRoutes(env: Env): Promise<Response> {
 export async function handleGetRouteDetail(env: Env, routeId: string): Promise<Response> {
 	const route = await env.DB.prepare(
 		`SELECT id, creator_id, creator_name, creator_avatar, title, purpose, distance, time, budget, likes,
-		        is_public, is_collaborative, image_url, tags_json, created_at
+		        is_public, is_collaborative, image_url, tags_json, skin_json, created_at
 		 FROM routes WHERE id = ?`
 	)
 		.bind(routeId)
@@ -179,6 +181,7 @@ export async function handlePostRoutes(request: Request, env: Env): Promise<Resp
 	const tags = safeJsonParse<string[]>(String(form.get("tags") || ""), []);
 	const isPublic = String(form.get("is_public") || "1") !== "0";
 	const stepsMeta = safeJsonParse<Array<Record<string, unknown>>>(String(form.get("steps_meta") || ""), []);
+	const skin = safeJsonParse<Record<string, string>>(String(form.get("skin_json") || ""), {});
 
 	if (!title || !creatorId) {
 		return json({ error: "title and creator_id are required" }, 400);
@@ -201,9 +204,9 @@ export async function handlePostRoutes(request: Request, env: Env): Promise<Resp
 
 	const routeInsert = env.DB.prepare(
 		`INSERT INTO routes (id, creator_id, creator_name, creator_avatar, title, purpose, distance, time, budget,
-		                      likes, is_public, is_collaborative, image_url, tags_json)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?)`
-	).bind(routeId, creatorId, creatorName, creatorAvatar, title, purpose, distance, time, budget, isPublic ? 1 : 0, coverImage, JSON.stringify(tags));
+		                      likes, is_public, is_collaborative, image_url, tags_json, skin_json)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?, ?)`
+	).bind(routeId, creatorId, creatorName, creatorAvatar, title, purpose, distance, time, budget, isPublic ? 1 : 0, coverImage, JSON.stringify(tags), JSON.stringify(skin));
 
 	const stepInserts = stepsMeta.map((step, i) => {
 		const gps = (step.gps as { lat?: number; lng?: number }) || null;
@@ -383,6 +386,7 @@ export async function handlePatchRoute(request: Request, env: Env, routeId: stri
 		budget?: string;
 		tags?: string[];
 		is_public?: boolean;
+		skin?: Record<string, string>;
 	};
 
 	const sets: string[] = [];
@@ -394,6 +398,7 @@ export async function handlePatchRoute(request: Request, env: Env, routeId: stri
 	if (body.budget !== undefined) { sets.push("budget = ?"); values.push(body.budget); }
 	if (body.tags !== undefined) { sets.push("tags_json = ?"); values.push(JSON.stringify(body.tags)); }
 	if (body.is_public !== undefined) { sets.push("is_public = ?"); values.push(body.is_public ? 1 : 0); }
+	if (body.skin !== undefined) { sets.push("skin_json = ?"); values.push(JSON.stringify(body.skin)); }
 
 	if (sets.length === 0) return json({ error: "no fields to update" }, 400);
 

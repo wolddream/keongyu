@@ -133,6 +133,15 @@
         background: var(--card); border-radius: 18px; padding: 16px; border: 1px solid var(--border);
         box-shadow: 0 2px 8px rgba(0,0,0,0.03); display: flex; flex-direction: column; gap: 10px;
       }
+      /* 루트카드 스킨(별사탕 꾸미기) - card_bg/frame/filter_aura는 인라인 style로 바로 얹고,
+         sticker/weather_effect만 이 두 클래스로 카드 안에 절대배치된다. */
+      .route-skin-badge { font-size: 13px; line-height: 1; }
+      .route-skin-sticker { position: absolute; top: 8px; right: 8px; font-size: 22px; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.15)); pointer-events: none; }
+      .route-skin-weather { position: absolute; inset: 0; overflow: hidden; pointer-events: none; border-radius: inherit; }
+      .route-skin-weather span { position: absolute; top: -10%; font-size: 16px; animation: route-skin-fall linear infinite; opacity: 0.85; }
+      @keyframes route-skin-fall { from { transform: translateY(0) rotate(0deg); } to { transform: translateY(340px) rotate(25deg); } }
+      .route-skin-holo-filter { animation: route-skin-holo 4s linear infinite; }
+      @keyframes route-skin-holo { 0% { filter: saturate(1.6) hue-rotate(0deg); } 100% { filter: saturate(1.6) hue-rotate(360deg); } }
       .card-top { display: flex; justify-content: space-between; align-items: center; }
       .purpose-pill {
         background: #F0F4FF; color: var(--primary); font-size: 11px; font-weight: 800;
@@ -289,6 +298,12 @@
 
     <!-- Bottom Toast -->
     <div id="toast" class="toast-box"></div>
+
+    <!-- 루트 따라가기 화면의 카카오맵 - #root 밖에 영구적으로 살아있다가 render()가 매번 새로
+         그리는 #route-map-slot 안으로 옮겨져 들어간다 (ensureRouteMap() 참고). #root처럼 매
+         상호작용마다 통째로 새로 만들어지는 요소 위에 지도를 직접 그리면 지도 인스턴스가 계속
+         파괴/재생성돼야 하기 때문. -->
+    <div id="route-map-host" style="display:none; width:100%; height:100%;"></div>
 
     <script>
       // ==========================================
@@ -623,6 +638,7 @@
           isMine: sr.creator_id === state.user.id,
           image: sr.image,
           steps: sr.steps || [],
+          skin: sr.skin || {},
           comments: [],
           isCollaborative: !!sr.isCollaborative,
           participants: [],
@@ -752,6 +768,7 @@
           budget: route.budget,
           tags: route.tags,
           is_public: !!route.isPublic,
+          skin: route.skin || {},
         });
       }
 
@@ -776,6 +793,7 @@
           form.set('creator_avatar', state.user.avatar || '');
           form.set('tags', JSON.stringify(localRoute.tags || []));
           form.set('is_public', localRoute.isPublic ? '1' : '0');
+          form.set('skin_json', JSON.stringify(localRoute.skin || {}));
           form.set(
             'steps_meta',
             JSON.stringify(
@@ -1087,6 +1105,7 @@
         r.participants = [];
         r.pendingInvites = [];
         r.editLog = [];
+        r.skin = r.skin || {};
       });
 
       function withCollabDefaults(route) {
@@ -1094,6 +1113,7 @@
         route.participants = [];
         route.pendingInvites = [];
         route.editLog = [];
+        route.skin = route.skin || {};
         return route;
       }
 
@@ -1205,6 +1225,7 @@
         if (state.ui.nearbyLoading === undefined) state.ui.nearbyLoading = false;
         if (state.ui.decoStudio === undefined) state.ui.decoStudio = null;
         if (state.deco === undefined) state.deco = { items: [], ownedIds: [], creations: [], loaded: false };
+        if (state.routeSkinShop === undefined) state.routeSkinShop = { items: [], ownedIds: [], loaded: false };
         if (state.challenge.todayCheck === undefined) state.challenge.todayCheck = null;
         if (state.challenge.completed === undefined) state.challenge.completed = false;
         state.routes.forEach(r => {
@@ -1650,8 +1671,9 @@
           return;
         }
         state.ui.bottomSheet = 'upload';
-        state.ui.routeBuilder = { editingRouteId: null, title: '', purpose: ROUTE_PURPOSES[0], distance: '', time: '', budget: '', steps: [] };
+        state.ui.routeBuilder = { editingRouteId: null, title: '', purpose: ROUTE_PURPOSES[0], distance: '', time: '', budget: '', steps: [], skin: {}, skinTab: ROUTE_SKIN_PARTS[0].key };
         state.ui.stopEditor = null;
+        loadRouteSkinShopIfNeeded();
         render();
       };
 
@@ -1674,9 +1696,12 @@
           distance: route.distance,
           time: route.time,
           budget: route.budget,
-          steps: route.steps.map(s => ({ ...s, images: (s.images || []).slice() }))
+          steps: route.steps.map(s => ({ ...s, images: (s.images || []).slice() })),
+          skin: { ...(route.skin || {}) },
+          skinTab: ROUTE_SKIN_PARTS[0].key
         };
         state.ui.stopEditor = null;
+        loadRouteSkinShopIfNeeded();
         render();
       };
 
@@ -1779,6 +1804,125 @@
       ];
       const DECO_RANDOM_COST = 10;
       const DECO_CANVAS_SIZE = 640; // 저장 시 합성되는 정사각형 PNG의 해상도 (편집기 미리보기는 DECO_PREVIEW_SIZE)
+
+      // 루트카드 스킨(업로드 시 12파츠를 별사탕으로 꾸미기) - keongyu-api/src/routeSkin.ts의
+      // route_skin_items.part 값과 반드시 일치해야 한다. deco 아이템처럼 emoji가 곧 실제 렌더링
+      // 자산이라 별도 이미지 에셋이 없다 - title_badge/author_badge/sticker/pin_start/pin_via/
+      // pin_end는 아이템의 emoji/name을 그대로 쓰고, 나머지 6개(카드 배경/프레임/필터/날씨/경로선/
+      // 지도)는 emoji만으로 표현하기 어려워 part 안에서의 가격 오름차순 순번(seed 파일과 동일한
+      // 순서, routeSkinItemIndex())으로 아래 팔레트에서 골라 쓴다.
+      const ROUTE_SKIN_PARTS = [
+        { key: 'card_bg', label: '카드 배경', emoji: '🎨' },
+        { key: 'map_style', label: '지도 스타일', emoji: '🗺️' },
+        { key: 'route_line', label: '경로 선', emoji: '🧵' },
+        { key: 'pin_start', label: '시작점 핀', emoji: '🚩' },
+        { key: 'pin_via', label: '경유점 핀', emoji: '📍' },
+        { key: 'pin_end', label: '도착점 핀', emoji: '🏁' },
+        { key: 'title_badge', label: '타이틀 뱃지', emoji: '🔖' },
+        { key: 'author_badge', label: '작성자 배지', emoji: '🧚' },
+        { key: 'weather_effect', label: '날씨 이펙트', emoji: '🌦️' },
+        { key: 'frame', label: '프레임', emoji: '🖼️' },
+        { key: 'sticker', label: '스티커', emoji: '⭐' },
+        { key: 'filter_aura', label: '전체 필터', emoji: '✨' },
+      ];
+      const CARD_BG_PALETTE = [
+        '#C9F5D9', '#E3D9FA', '#FFF3C4', '#CFE8FF', '#EAD9C4',
+        'linear-gradient(135deg,#FFD6E8,#FFF3C4)', 'repeating-linear-gradient(45deg,#F4F4F2,#F4F4F2 10px,#FFFFFF 10px,#FFFFFF 20px)',
+        'linear-gradient(180deg,#DCEBFF,#FFFFFF)', 'linear-gradient(135deg,#FFE8B8,#FFD1E8)',
+        'linear-gradient(160deg,#FF9A76,#6C5B9E)', 'linear-gradient(160deg,#1B1F3B,#3A2E5C)',
+        'linear-gradient(120deg,#FF9AD5,#A78BFA,#7DD3FC,#86EFAC,#FDE68A)',
+      ];
+      const FRAME_PALETTE = [
+        '2px solid #E5E1FF', '3px solid #F0F0EE', '2px dashed #D8D2FF', '3px double #C9C4F5', '3px solid rgba(0,0,0,0.08)',
+        '4px solid #B08968', '3px solid #222', '4px dashed #FFB6D9', '5px solid #8B5E3C',
+        '3px solid #8B6CFF', '4px solid #F5C518',
+        '3px dashed #FF7AA8',
+      ];
+      const FILTER_AURA_PALETTE = [
+        'brightness(1.06)', 'sepia(0.12) brightness(1.03)', 'saturate(0.85) brightness(1.04)', 'contrast(0.95) brightness(1.05)', 'contrast(1.08) saturate(1.05)',
+        'contrast(0.92) brightness(1.02) sepia(0.06)', 'brightness(1.05)', 'brightness(1.08) saturate(1.1)', 'sepia(0.18) contrast(0.95)',
+        'saturate(1.3) brightness(1.05)', 'saturate(1.4) hue-rotate(15deg)',
+      ]; // index 11(SSR)은 정적 필터 대신 .route-skin-holo-filter 애니메이션 클래스를 쓴다
+      // 파티클 이모지 - N 5종(맑음/미풍 등)은 은은한 컨셉이라 카드 위에 그릴 입자가 없다(null).
+      const WEATHER_PALETTE = [null, null, null, null, null, '❄️', '🌸', '☀️', '💧', '🌸', '✨', '🌌'];
+      const ROUTE_LINE_PALETTE = [
+        { color: '#9CA3AF', dash: [] }, { color: '#9CA3AF', dash: [2, 4] }, { color: '#6B7280', dash: [] }, { color: '#9CA3AF', dash: [1, 3] }, { color: '#6B7280', dash: [6, 3] },
+        { color: '#F59E0B', dash: [4, 4] }, { color: '#F472B6', dash: [1, 5] }, { color: '#FB7185', dash: [8, 4] }, { color: '#A78BFA', dash: [3, 3] },
+        { color: '#22D3EE', dash: [2, 2] }, { color: '#A855F7', dash: [] },
+        { color: '#F472B6', dash: [2, 2] },
+      ];
+      const MAP_STYLE_PALETTE = [
+        'none', 'grayscale(0.5)', 'sepia(0.25)', 'grayscale(1) contrast(1.1)', 'brightness(1.1) contrast(0.9)',
+        'sepia(0.4) contrast(0.95)', 'invert(0.9) hue-rotate(180deg)', 'sepia(0.5) saturate(0.6) contrast(1.05)', 'hue-rotate(150deg) saturate(1.3)',
+        'saturate(0.4) brightness(1.15) contrast(0.9)', 'invert(1) hue-rotate(220deg) saturate(2)',
+        'hue-rotate(200deg) saturate(1.8) brightness(0.9)',
+      ];
+
+      function findRouteSkinItem(itemId) {
+        if (!itemId) return null;
+        return state.routeSkinShop.items.find(i => i.id === itemId) || null;
+      }
+
+      // part 안에서 이 아이템이 몇 번째(0~11, 가격 오름차순 - seed 파일/서버 SELECT 정렬과 동일)인지.
+      // 위 팔레트들의 인덱스로 그대로 쓴다.
+      function routeSkinItemIndex(item) {
+        if (!item) return -1;
+        const siblings = state.routeSkinShop.items.filter(i => i.part === item.part).sort((a, b) => a.price - b.price || a.id.localeCompare(b.id));
+        return siblings.findIndex(i => i.id === item.id);
+      }
+
+      // route.skin의 12파츠를 실제 카드 CSS/HTML로 변환. 홈 피드 카드, 내 루트 카드, 업로드
+      // 미리보기 카드가 전부 이 함수 하나로 렌더링되어야 미리보기와 실제 화면이 어긋나지 않는다.
+      function getRouteSkinVisuals(route) {
+        const skin = (route && route.skin) || {};
+        const v = { bgCss: '', frameCss: '', filterCss: '', filterClass: '', titleBadge: '', authorBadge: '', stickerHtml: '', weatherHtml: '' };
+        const bg = findRouteSkinItem(skin.card_bg);
+        if (bg) { const idx = routeSkinItemIndex(bg); if (idx >= 0) v.bgCss = CARD_BG_PALETTE[idx]; }
+        const frame = findRouteSkinItem(skin.frame);
+        if (frame) { const idx = routeSkinItemIndex(frame); if (idx >= 0) v.frameCss = FRAME_PALETTE[idx]; }
+        const filterAura = findRouteSkinItem(skin.filter_aura);
+        if (filterAura) {
+          const idx = routeSkinItemIndex(filterAura);
+          if (idx === 11) v.filterClass = 'route-skin-holo-filter';
+          else if (idx >= 0) v.filterCss = FILTER_AURA_PALETTE[idx];
+        }
+        const titleBadgeItem = findRouteSkinItem(skin.title_badge);
+        if (titleBadgeItem) v.titleBadge = `<span class="route-skin-badge" title="${esc(titleBadgeItem.name)}">${titleBadgeItem.emoji}</span>`;
+        const authorBadgeItem = findRouteSkinItem(skin.author_badge);
+        if (authorBadgeItem) v.authorBadge = `<span class="route-skin-badge" title="${esc(authorBadgeItem.name)}">${authorBadgeItem.emoji}</span>`;
+        const stickerItem = findRouteSkinItem(skin.sticker);
+        if (stickerItem) v.stickerHtml = `<div class="route-skin-sticker" title="${esc(stickerItem.name)}">${stickerItem.emoji}</div>`;
+        const weatherItem = findRouteSkinItem(skin.weather_effect);
+        if (weatherItem) {
+          const idx = routeSkinItemIndex(weatherItem);
+          const particle = WEATHER_PALETTE[idx];
+          if (particle) v.weatherHtml = renderRouteSkinWeather(particle, idx);
+        }
+        return v;
+      }
+
+      function renderRouteSkinWeather(emoji, idx) {
+        const count = idx >= 9 ? 10 : 6; // SR/SSR은 더 풍성하게
+        let html = '<div class="route-skin-weather">';
+        for (let i = 0; i < count; i++) {
+          const left = Math.max(2, Math.min(96, Math.round((i / count) * 100 + (i % 2 ? 3 : -3))));
+          html += `<span style="left:${left}%; animation-delay:${(i * 0.35).toFixed(2)}s; animation-duration:${(3 + (i % 3)).toFixed(1)}s;">${emoji}</span>`;
+        }
+        return html + '</div>';
+      }
+
+      // .route-card 시작 태그에 필요한 style/class 속성 문자열. 스킨이 없으면 원래처럼 빈 문자열.
+      function routeCardSkinAttrs(v, extraStyle) {
+        const styles = [];
+        if (extraStyle) styles.push(extraStyle.replace(/;\s*$/, ''));
+        if (v.bgCss) styles.push(`background:${v.bgCss}`);
+        if (v.frameCss) styles.push(`border:${v.frameCss}`);
+        if (v.filterCss) styles.push(`filter:${v.filterCss}`);
+        if (v.stickerHtml || v.weatherHtml) styles.push('position:relative', 'overflow:hidden');
+        const style = styles.length ? ` style="${styles.join('; ')}"` : '';
+        const cls = v.filterClass ? ` ${v.filterClass}` : '';
+        return { style, cls };
+      }
 
       function newStopDraft() {
         return {
@@ -2116,6 +2260,7 @@
           route.time = time || '정보 없음';
           route.budget = budgetNum > 0 ? `${budgetNum.toLocaleString()}원` : '0원';
           route.steps = orderedSteps;
+          route.skin = { ...builder.skin };
           if (coverImage) route.image = coverImage;
           if (!route.editLog) route.editLog = [];
           route.editLog.unshift({ user: state.user.name, avatar: getAvatarDisplay(state.user.name), action: '루트 정보 수정', time: '방금' });
@@ -2144,6 +2289,7 @@
           isMine: true,
           image: coverImage,
           steps: orderedSteps,
+          skin: { ...builder.skin },
           comments: []
         };
 
@@ -2193,6 +2339,117 @@
           const data = await res.json();
           state.deco.creations = data.creations || [];
         } catch (e) { console.warn('[deco] creations load failed', e); }
+      }
+
+      // 루트카드 스킨 샵 - deco 카탈로그 로딩과 동일한 지연 로딩 패턴 (업로드 시트에서 스킨
+      // 섹션을 처음 열 때 한 번만 호출).
+      async function loadRouteSkinShopIfNeeded() {
+        if (state.routeSkinShop.loaded) return;
+        try {
+          const res = await fetch(`${API_BASE}/api/route-skin/items`);
+          const data = await res.json();
+          state.routeSkinShop.items = data.items || [];
+        } catch (e) { console.warn('[route-skin] items load failed', e); }
+        await refreshRouteSkinInventory();
+        state.routeSkinShop.loaded = true;
+        render();
+      }
+
+      async function refreshRouteSkinInventory() {
+        if (!state.user.isLoggedIn) return;
+        try {
+          const res = await fetch(`${API_BASE}/api/route-skin/inventory?user_id=${encodeURIComponent(state.user.id)}`);
+          const data = await res.json();
+          state.routeSkinShop.ownedIds = data.item_ids || [];
+        } catch (e) { console.warn('[route-skin] inventory load failed', e); }
+      }
+
+      window.selectRouteSkinTab = function(part) {
+        if (!state.ui.routeBuilder) return;
+        state.ui.routeBuilder.skinTab = part;
+        render();
+      };
+
+      window.equipRouteSkinItem = function(itemId) {
+        const builder = state.ui.routeBuilder;
+        const item = findRouteSkinItem(itemId);
+        if (!builder || !item) return;
+        builder.skin[item.part] = item.id;
+        render();
+      };
+
+      // 장착 해제는 custom/deco 상점과 동일하게 무료·즉시 - 한 번 산 아이템은 영구 소유이고,
+      // 환불 없이 몇 번이든 다시 장착할 수 있다 (별도 결정: 대여 개념 도입 안 함).
+      window.unequipRouteSkinPart = function(part) {
+        const builder = state.ui.routeBuilder;
+        if (!builder || !builder.skin[part]) return;
+        delete builder.skin[part];
+        render();
+      };
+
+      window.handleRouteSkinItemTap = function(itemId) {
+        const builder = state.ui.routeBuilder;
+        const item = findRouteSkinItem(itemId);
+        if (!builder || !item) return;
+        const equipped = builder.skin[item.part] === item.id;
+        if (equipped) { unequipRouteSkinPart(item.part); return; }
+        if (state.routeSkinShop.ownedIds.includes(item.id)) { equipRouteSkinItem(item.id); return; }
+        buyRouteSkinItem(item.id);
+      };
+
+      window.buyRouteSkinItem = async function(itemId) {
+        const item = findRouteSkinItem(itemId);
+        if (!item) return;
+        if (!state.user.isLoggedIn) { showToast('로그인 후 구매할 수 있어요 🔐'); openLoginSheet('initial'); return; }
+        if (state.user.points < item.price) { showToast(`별사탕이 부족해요! (보유: ${state.user.points}개 / 필요: ${item.price}개)`); return; }
+        try {
+          const result = await apiJsonAwait('/api/route-skin/buy', 'POST', { user_id: state.user.id, item_id: item.id });
+          if (!state.routeSkinShop.ownedIds.includes(item.id)) state.routeSkinShop.ownedIds.push(item.id);
+          state.user.points = result.points;
+          showToast(`구매 완료! ⭐-${item.price}`);
+          equipRouteSkinItem(item.id);
+        } catch (err) {
+          showToast(err.message || '구매에 실패했어요.');
+        }
+      };
+
+      function renderRouteSkinShopItem(item, rb) {
+        const owned = state.routeSkinShop.ownedIds.includes(item.id);
+        const equipped = rb.skin[item.part] === item.id;
+        const rarityColor = RARITY_COLORS[item.rarity] || '#9CA3AF';
+        return `
+          <div style="border:2px solid ${equipped ? 'var(--primary)' : 'var(--border)'}; border-radius:14px; padding:8px 4px; text-align:center; background:#FFF; cursor:pointer;" onclick="handleRouteSkinItemTap('${item.id}')">
+            <div style="font-size:22px;">${item.emoji}</div>
+            <div style="font-size:10px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(item.name)}</div>
+            <div style="font-size:9px; font-weight:900; color:${rarityColor};">${item.rarity}</div>
+            <div style="font-size:10px; font-weight:700; color:${equipped ? 'var(--primary)' : 'var(--text-sub)'};">${equipped ? '✓ 장착됨' : (owned ? '보유중' : `⭐${item.price}`)}</div>
+          </div>
+        `;
+      }
+
+      // 업로드 시트 좌측의 실시간 미리보기 - 홈 피드/내 루트 카드와 완전히 같은
+      // getRouteSkinVisuals()/routeCardSkinAttrs()를 거치므로 여기서 본 그대로 다른 사람 화면에도 보인다.
+      function renderRouteSkinPreviewCard(rb) {
+        const previewRoute = { title: rb.title, purpose: rb.purpose, skin: rb.skin };
+        const v = getRouteSkinVisuals(previewRoute);
+        const attrs = routeCardSkinAttrs(v, 'padding:10px; gap:6px; min-height:150px;');
+        const pv = PURPOSE_VISUAL[rb.purpose] || { emoji: '📍', gradient: 'linear-gradient(135deg,#EEE,#DDD)' };
+        return `
+          <div class="route-card${attrs.cls}"${attrs.style}>
+            <div style="display:flex; align-items:center; gap:4px;">
+              <span class="purpose-pill" style="font-size:10px; padding:3px 8px;">${rb.purpose}</span>
+              ${v.titleBadge}
+            </div>
+            <div style="font-size:12px; font-weight:900; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(rb.title || '루트 제목 미리보기')}</div>
+            <div class="card-img" style="height:64px; font-size:24px; background:${pv.gradient};">${pv.emoji}</div>
+            <div style="display:flex; align-items:center; gap:4px;">
+              <span style="font-size:10px; font-weight:800; color:var(--text-sub);">${esc(state.user.name)}</span>
+              ${v.authorBadge}
+            </div>
+            ${v.stickerHtml}
+            ${v.weatherHtml}
+          </div>
+        `;
       }
 
       // Downscales/re-encodes via the same helper used for 경유지 사진, then opens the editor with
@@ -2616,6 +2873,131 @@
         saveState();
         render();
       };
+
+      // 루트 따라가기 화면의 카카오맵 (map_style/route_line/pin_start/pin_via/pin_end 스킨).
+      // 기존 카카오 로그인과 같은 JS 키를 재사용한다 - Kakao Developers 콘솔에서 해당 앱에
+      // "카카오맵" 제품이 활성화돼 있어야 한다(로그인과 별개로 켜야 하는 설정, 새 키는 필요 없음).
+      // autoload=false + kakao.maps.load()는 Kakao Maps 공식 지연 로딩 패턴 - 지도를 실제로
+      // 열 때(루트 따라가기)까지 SDK를 내려받지 않는다.
+      let _kakaoMapsLoading = null;
+      function loadKakaoMapsSdk() {
+        if (window.kakao && window.kakao.maps && window.kakao.maps.Map) return Promise.resolve();
+        if (_kakaoMapsLoading) return _kakaoMapsLoading;
+        _kakaoMapsLoading = new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&autoload=false`;
+          script.onload = () => window.kakao.maps.load(resolve);
+          script.onerror = () => { _kakaoMapsLoading = null; reject(new Error('Kakao Maps SDK load failed')); };
+          document.head.appendChild(script);
+        });
+        return _kakaoMapsLoading;
+      }
+
+      let _routeMapInstance = null;
+      let _routeMapOverlays = [];
+      let _routeMapSignature = null; // route.id + gps 좌표 + 지도 관련 스킨의 해시 - 안 바뀌면 다시 안 그림
+
+      // #route-map-host는 #root 밖에서 body의 직속 자식으로 영구히 살아있다 - render()가
+      // #root.innerHTML을 통째로 재생성할 때마다 #route-map-slot(플레이스홀더 <div>)도 매번
+      // 파괴되고 새로 만들어지므로, 실제 지도 요소를 그 슬롯 "안으로" appendChild 해서 옮기면
+      // (처음엔 그렇게 짰었다) 바로 다음 render()에서 그 슬롯째로 함께 파괴돼 버린다. 대신 여기서는
+      // host를 절대 옮기지 않고, 매 render() 끝에서 이 함수가 슬롯의 화면 좌표(getBoundingClientRect)
+      // 를 읽어 position:fixed인 host를 그 위에 겹쳐 그린다 - 슬롯은 매번 새로 그려지는 빈
+      // 자리표시자일 뿐이고, 실제 kakao.maps.Map은 host 위에서 단 한 번만 만들어진다.
+      function ensureRouteMap() {
+        const host = document.getElementById('route-map-host');
+        if (!host) return;
+        const slot = state.ui.followRouteId ? document.getElementById('route-map-slot') : null;
+
+        if (!slot) {
+          host.style.display = 'none';
+          return;
+        }
+
+        const route = state.routes.find(r => r.id === state.ui.followRouteId);
+        if (!route) { host.style.display = 'none'; return; }
+
+        const rect = slot.getBoundingClientRect();
+        host.style.display = 'block';
+        host.style.position = 'fixed';
+        host.style.top = rect.top + 'px';
+        host.style.left = rect.left + 'px';
+        host.style.width = rect.width + 'px';
+        host.style.height = rect.height + 'px';
+        host.style.zIndex = 91; // .fullscreen-overlay(z-index:90) 바로 위 - 그 안에 있는 것처럼 보이게
+
+        const gpsSteps = route.steps.filter(s => s.gps && typeof s.gps.lat === 'number' && typeof s.gps.lng === 'number');
+        if (gpsSteps.length === 0) {
+          host.style.filter = '';
+          host.innerHTML = `<div style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-sub); font-size:12px; text-align:center; padding:0 20px; line-height:1.5;">📍 경유지에 GPS 정보가 없어<br/>지도를 표시할 수 없어요</div>`;
+          _routeMapInstance = null;
+          _routeMapSignature = null;
+          return;
+        }
+
+        const signature = JSON.stringify({
+          id: route.id,
+          pts: gpsSteps.map(s => [s.gps.lat, s.gps.lng]),
+          skin: [route.skin.map_style, route.skin.route_line, route.skin.pin_start, route.skin.pin_via, route.skin.pin_end],
+        });
+        if (signature === _routeMapSignature && _routeMapInstance) return;
+        _routeMapSignature = signature;
+
+        loadKakaoMapsSdk().then(() => {
+          // 로딩이 비동기라 기다리는 동안 사용자가 화면을 닫거나 다른 루트를 열었을 수 있다.
+          if (state.ui.followRouteId !== route.id || _routeMapSignature !== signature) return;
+          host.innerHTML = '';
+          drawRouteMap(host, route, gpsSteps);
+        }).catch(err => {
+          console.warn('[route-map]', err);
+          host.innerHTML = `<div style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-sub); font-size:12px;">지도를 불러오지 못했어요</div>`;
+        });
+      }
+
+      function drawRouteMap(host, route, gpsSteps) {
+        const kakao = window.kakao;
+        const center = new kakao.maps.LatLng(gpsSteps[0].gps.lat, gpsSteps[0].gps.lng);
+        const map = new kakao.maps.Map(host, { center, level: 6 });
+        _routeMapInstance = map;
+        _routeMapOverlays = []; // host.innerHTML='' (ensureRouteMap) already dropped the old map's DOM
+
+        // map_style: 카카오맵은 벡터 타일 자체를 커스터마이징하는 무료 API가 없어 지도 컨테이너에
+        // CSS filter를 입혀 스킨을 근사한다 - deco 시스템이 별도 이미지 에셋 없이 이모지만으로
+        // 렌더링하는 것과 같은 절충이다.
+        const mapStyleIdx = routeSkinItemIndex(findRouteSkinItem(route.skin.map_style));
+        host.style.filter = mapStyleIdx >= 0 ? MAP_STYLE_PALETTE[mapStyleIdx] : '';
+
+        const path = gpsSteps.map(s => new kakao.maps.LatLng(s.gps.lat, s.gps.lng));
+        if (path.length > 1) {
+          const lineIdx = routeSkinItemIndex(findRouteSkinItem(route.skin.route_line));
+          const lineStyle = ROUTE_LINE_PALETTE[lineIdx >= 0 ? lineIdx : 0];
+          _routeMapOverlays.push(new kakao.maps.Polyline({
+            map, path,
+            strokeWeight: 4,
+            strokeColor: lineStyle.color,
+            strokeOpacity: 0.9,
+            strokeStyle: lineStyle.dash.length ? 'shortdash' : 'solid',
+          }));
+        }
+
+        const pinEmoji = (partKey, fallback) => (findRouteSkinItem(route.skin[partKey]) || {}).emoji || fallback;
+        gpsSteps.forEach((s, i) => {
+          const isStart = i === 0;
+          const isEnd = i === gpsSteps.length - 1 && gpsSteps.length > 1;
+          const emoji = isStart ? pinEmoji('pin_start', '🚩') : isEnd ? pinEmoji('pin_end', '🏁') : pinEmoji('pin_via', '📍');
+          _routeMapOverlays.push(new kakao.maps.CustomOverlay({
+            map,
+            position: new kakao.maps.LatLng(s.gps.lat, s.gps.lng),
+            content: `<div style="font-size:24px; transform:translateY(-70%);">${emoji}</div>`,
+          }));
+        });
+
+        if (path.length > 1) {
+          const bounds = new kakao.maps.LatLngBounds();
+          path.forEach(p => bounds.extend(p));
+          map.setBounds(bounds);
+        }
+      }
 
       window.openStepPhotoLightbox = function(routeId, stepIdx, photoIdx) {
         state.ui.photoLightbox = { routeId, stepIdx, photoIdx: photoIdx || 0 };
@@ -3596,9 +3978,11 @@
               const bellIcon = notifType === 'none' ? '🔕' : notifType === 'personal' ? '🔔' : '🔔';
               const bellColor = notifType === 'none' ? '#999' : notifType === 'personal' ? '#FFC61C' : 'var(--primary)';
               const isLiked = state.user.likedRoutes.includes(r.id);
+              const skinV = getRouteSkinVisuals(r);
+              const skinAttrs = routeCardSkinAttrs(skinV);
 
               html += `
-                <div class="route-card">
+                <div class="route-card${skinAttrs.cls}"${skinAttrs.style}>
                   <div class="card-top">
                     <div style="display:flex; align-items:center; gap:6px;">
                       <span class="purpose-pill">${r.purpose}</span>
@@ -3609,7 +3993,9 @@
                       <span>${r.likes || 0}</span>
                     </button>
                   </div>
-                  <div class="card-title" style="cursor:pointer;" onclick="startFollowRoute('${r.id}')">${esc(r.title)}</div>
+                  <div class="card-title" style="cursor:pointer; display:flex; align-items:center; gap:4px;" onclick="startFollowRoute('${r.id}')">
+                    <span>${esc(r.title)}</span>${skinV.titleBadge}
+                  </div>
                   <div class="card-pills">
                     <span class="info-pill">📍 ${r.distance}</span>
                     <span class="info-pill">⏱️ ${r.time}</span>
@@ -3628,6 +4014,7 @@
                           <span>${esc(r.creator)}</span>
                           <span style="font-size:11px;">${tier.icon}</span>
                           ${tier.ribbon ? `<span class="ribbon-tag" title="인증 크리에이터">🎗️</span>` : ''}
+                          ${skinV.authorBadge}
                         </div>
                       </div>
                     </div>
@@ -3646,6 +4033,8 @@
                       `}
                     </div>
                   </div>
+                  ${skinV.stickerHtml}
+                  ${skinV.weatherHtml}
                 </div>
               `;
             });
@@ -3751,8 +4140,11 @@
                     <div style="font-weight:700;">아직 등록된 내 루트가 없어요</div>
                     <div style="font-size:12px; margin-top:4px;">사진이나 지도 링크로 첫 루트를 만들어보세요!</div>
                   </div>
-                ` : myRoutes.map(r => `
-                  <div class="route-card">
+                ` : myRoutes.map(r => {
+                  const skinV = getRouteSkinVisuals(r);
+                  const skinAttrs = routeCardSkinAttrs(skinV);
+                  return `
+                  <div class="route-card${skinAttrs.cls}"${skinAttrs.style}>
                     <div class="card-top">
                       <div style="display:flex; align-items:center; gap:6px;">
                         <span class="purpose-pill">${r.purpose}</span>
@@ -3765,7 +4157,9 @@
                         <span style="font-size:12px; font-weight:700; color:#FF4B6E;">❤️ ${r.likes || 0}</span>
                       </div>
                     </div>
-                    <div class="card-title" style="cursor:pointer;" onclick="startFollowRoute('${r.id}')">${esc(r.title)}</div>
+                    <div class="card-title" style="cursor:pointer; display:flex; align-items:center; gap:4px;" onclick="startFollowRoute('${r.id}')">
+                      <span>${esc(r.title)}</span>${skinV.titleBadge}
+                    </div>
                     <div class="card-pills">
                       <span class="info-pill">📍 ${r.distance}</span>
                       <span class="info-pill">⏱️ ${r.time}</span>
@@ -3779,8 +4173,10 @@
                         <button class="cta-btn" style="background:#FFF; color:var(--danger, #FF4242); border:1px solid var(--danger, #FF4242);" onclick="deleteMyRoute('${r.id}')">삭제</button>
                       </div>
                     </div>
+                    ${skinV.stickerHtml}
+                    ${skinV.weatherHtml}
                   </div>
-                `).join('')}
+                `;}).join('')}
               </div>
             </div>
           `;
@@ -3936,6 +4332,15 @@
                 <div style="height:4px; background:#EEE;">
                   <div style="height:100%; width:${totalSteps ? Math.round((myCheckedCount / totalSteps) * 100) : 0}%; background:var(--mint); transition:width 0.3s;"></div>
                 </div>
+
+                <!-- 카카오맵 - 실제 <div>는 #root 밖에 영구적으로 살아있는 요소를 여기 슬롯으로
+                     이동시켜 넣는다(ensureRouteMap() 참고). 매 render()마다 #root.innerHTML을
+                     통째로 새로 만드는 이 앱 구조상, 지도 DOM을 render()로 직접 그리면 지도가
+                     열려있는 동안 일어나는 모든 무관한 렌더(채팅 폴링 등)마다 지도 인스턴스가
+                     파괴되고 다시 초기화돼야 해서 - 이 슬롯은 매번 새로 그려지는 빈 자리표시자일
+                     뿐이고, 실제 kakao.maps.Map은 이 슬롯 안으로 옮겨진 고정 요소 위에서 단 한
+                     번만 만들어진다. -->
+                <div id="route-map-slot" style="height:190px; flex-shrink:0; position:relative; background:#EEE;"></div>
 
                 <!-- Scrollable Timeline -->
                 <div class="route-timeline-scroll" style="padding:18px 16px 4px; flex:1; overflow-y:auto; overscroll-behavior:contain;">
@@ -4259,6 +4664,27 @@
                   <input type="text" id="builder-distance" placeholder="총 거리 (예: 1.5km)" value="${esc(rb.distance)}" oninput="state.ui.routeBuilder.distance=this.value" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
                   <input type="text" id="builder-time" placeholder="소요시간 (예: 40분)" value="${esc(rb.time)}" oninput="state.ui.routeBuilder.time=this.value" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
                   <input type="text" id="builder-budget" placeholder="예상비용(원)" value="${esc(rb.budget)}" oninput="state.ui.routeBuilder.budget=this.value" inputmode="numeric" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
+                </div>
+
+                <div style="border-top:1px solid var(--border); padding-top:14px; display:flex; flex-direction:column; gap:10px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-size:13px; font-weight:900;">⭐ 스킨 꾸미기 - 별사탕 샵</div>
+                    <div style="font-size:12px; font-weight:800; color:var(--primary);">내 별사탕: ⭐ ${state.user.points}</div>
+                  </div>
+                  <div style="display:grid; grid-template-columns:112px 1fr; gap:10px; align-items:start;">
+                    <div>${renderRouteSkinPreviewCard(rb)}</div>
+                    <div style="min-width:0;">
+                      <div class="filter-scroll" style="margin-bottom:8px;">
+                        ${ROUTE_SKIN_PARTS.map(p => `
+                          <div class="filter-chip sub-chip ${rb.skinTab === p.key ? 'active' : ''}" onclick="selectRouteSkinTab('${p.key}')">${p.emoji} ${p.label}${rb.skin[p.key] ? ' ✓' : ''}</div>
+                        `).join('')}
+                      </div>
+                      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; max-height:220px; overflow-y:auto;">
+                        ${state.routeSkinShop.items.filter(i => i.part === rb.skinTab).map(item => renderRouteSkinShopItem(item, rb)).join('')}
+                        ${state.routeSkinShop.loaded && state.routeSkinShop.items.filter(i => i.part === rb.skinTab).length === 0 ? `<div style="grid-column:1/-1; text-align:center; color:var(--text-sub); font-size:12px; padding:10px;">아이템을 불러오지 못했어요.</div>` : ''}
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <button class="cta-btn" style="padding:14px; font-size:14px; opacity:${rb.steps.length === 0 ? '0.5' : '1'};" onclick="finalizeRouteBuilder()">${rb.editingRouteId ? '✅ 수정 완료' : '🚀 루트 등록 완료'}</button>
@@ -4798,6 +5224,10 @@
             if (savedScrollTops[i]) el.scrollTop = savedScrollTops[i];
           });
         }
+
+        // 4c. 루트 따라가기 화면의 카카오맵 - #route-map-slot이 방금 새로 그려졌으니, 영구 지도
+        // 요소를 그 안으로 옮기고 필요할 때만(신호가 바뀌었을 때만) 다시 그린다.
+        ensureRouteMap();
 
         // 4b. Reattach step-editor camera stream (innerHTML replacement drops the <video> element's srcObject)
         if (state.ui.stopEditor && state.ui.stopEditor.cameraOpen && window._stepMediaStream) {
