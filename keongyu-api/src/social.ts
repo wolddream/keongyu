@@ -102,7 +102,7 @@ export async function handleDeleteSubscription(env: Env, userId: string, creator
 
 export async function handleGetNotifications(env: Env, userId: string): Promise<Response> {
 	const { results } = await env.DB.prepare(
-		`SELECT id, creator, title, route_id, read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`
+		`SELECT id, creator, title, route_id, read, type, body, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`
 	)
 		.bind(userId)
 		.all();

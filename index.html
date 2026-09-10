@@ -142,6 +142,23 @@
       @keyframes route-skin-fall { from { transform: translateY(0) rotate(0deg); } to { transform: translateY(340px) rotate(25deg); } }
       .route-skin-holo-filter { animation: route-skin-holo 4s linear infinite; }
       @keyframes route-skin-holo { 0% { filter: saturate(1.6) hue-rotate(0deg); } 100% { filter: saturate(1.6) hue-rotate(360deg); } }
+
+      /* 별사탕 선물하기 - 금색 별이 반짝이며 날아가는 1회성 연출 (playGiftFlyAnimation) */
+      .gift-star-fly {
+        position: fixed; left: 50%; bottom: 110px; font-size: 32px; z-index: 250;
+        transform: translateX(-50%); pointer-events: none;
+        filter: drop-shadow(0 0 8px #FFD700);
+        animation: gift-star-fly 1.2s ease-out forwards;
+      }
+      @keyframes gift-star-fly {
+        0% { transform: translateX(-50%) translateY(0) scale(1) rotate(0deg); opacity: 1; }
+        60% { transform: translateX(-50%) translateY(-260px) scale(1.3) rotate(200deg); opacity: 1; }
+        100% { transform: translateX(-50%) translateY(-440px) scale(0.4) rotate(360deg); opacity: 0; }
+      }
+      .gift-amount-chip { padding: 8px 14px; border-radius: 14px; border: 2px solid #EEE; background: #FFF; font-weight: 800; font-size: 13px; cursor: pointer; }
+      .gift-amount-chip.selected { border-color: #FFD700; background: linear-gradient(135deg,#FFF3C4,#FFE8A3); box-shadow: 0 0 10px rgba(255,215,0,0.5); }
+      .gift-msg-chip { padding: 9px 10px; border-radius: 12px; border: 1px solid var(--border); background: #FFF; font-size: 12px; font-weight: 700; cursor: pointer; margin-bottom: 6px; }
+      .gift-msg-chip.selected { border-color: #FFD700; background: rgba(255,215,0,0.12); }
       .card-top { display: flex; justify-content: space-between; align-items: center; }
       .purpose-pill {
         background: #F0F4FF; color: var(--primary); font-size: 11px; font-weight: 800;
@@ -634,6 +651,7 @@
           budget: sr.budget,
           likes: sr.likes,
           creator: sr.creator,
+          creatorId: sr.creator_id,
           isPublic: sr.isPublic,
           isMine: sr.creator_id === state.user.id,
           image: sr.image,
@@ -677,10 +695,11 @@
             id: n.id,
             creator: n.creator,
             title: n.title,
+            body: n.body || null,
             routeId: n.route_id,
             time: n.created_at,
             read: !!n.read,
-            type: 'new_route',
+            type: n.type || 'new_route',
           }));
           saveState();
           render();
@@ -1106,6 +1125,9 @@
         r.pendingInvites = [];
         r.editLog = [];
         r.skin = r.skin || {};
+        // 데모 루트는 실제 서버 유저가 아니라서 선물하기 대상 ID가 없다 - creator 이름을
+        // 안정적인 가짜 ID로 써서 최소한 자기 자신 판별(=== state.user.id)은 깨지지 않게 한다.
+        r.creatorId = r.creatorId || `demo_${r.creator}`;
       });
 
       function withCollabDefaults(route) {
@@ -1114,6 +1136,7 @@
         route.pendingInvites = [];
         route.editLog = [];
         route.skin = route.skin || {};
+        route.creatorId = route.creatorId || state.user.id;
         return route;
       }
 
@@ -1216,6 +1239,8 @@
           state.ui.stopEditor.photos = state.ui.stopEditor.photoUrl ? [state.ui.stopEditor.photoUrl] : [];
         }
         if (state.ui.photoLightbox === undefined) state.ui.photoLightbox = null;
+        if (state.ui.giftSheet === undefined) state.ui.giftSheet = null; // { toUserId, toUserName, routeId, amount, message } - 별사탕 선물하기
+        if (state.giftbox === undefined) state.giftbox = { gifts: [], loaded: false }; // 받은 선물함 (candy_gifts 조회 결과)
         if (state.ui.chatSheet === undefined) state.ui.chatSheet = null;
         if (!Array.isArray(state.ui.chatMessages)) state.ui.chatMessages = [];
         if (state.ui.chatLoading === undefined) state.ui.chatLoading = false;
@@ -2451,6 +2476,122 @@
           </div>
         `;
       }
+
+      // ==========================================
+      // 2c. 별사탕 선물하기 - 화폐는 기존 state.user.points(⭐) 그대로 쓴다. 별도 "금별" 화폐나
+      // localStorage 키는 없다 - 이 앱은 이미 어디서나 별사탕을 🍬가 아닌 ⭐로만 표시해왔다.
+      // ==========================================
+      const GIFT_AMOUNT_PRESETS = [5, 10, 20, 50, 100];
+      const GIFT_MESSAGE_PRESETS = [
+        '고마워요! 덕분에 좋은 루트 갔어요 ⭐',
+        '스킨 너무 예뻐요! 🌟',
+        '다음에 같이 가요! 💫',
+        "kyungyu's pick 인정! ⭐",
+      ];
+      let _lastGiftSentAt = 0;
+
+      window.openGiftSheet = function(toUserId, toUserName, routeId) {
+        if (!state.user.isLoggedIn) { showToast('로그인 후 선물할 수 있어요 🔐'); openLoginSheet('initial'); return; }
+        if (!toUserId || toUserId === state.user.id) { showToast('자기 자신에게는 선물할 수 없어요 😅'); return; }
+        state.ui.giftSheet = { toUserId, toUserName: toUserName || '상대방', routeId: routeId || null, amount: 10, message: GIFT_MESSAGE_PRESETS[0] };
+        render();
+      };
+
+      window.closeGiftSheet = function() {
+        state.ui.giftSheet = null;
+        render();
+      };
+
+      window.selectGiftAmount = function(amount) {
+        if (!state.ui.giftSheet) return;
+        state.ui.giftSheet.amount = amount;
+        render();
+      };
+
+      window.setGiftCustomAmount = function(value) {
+        if (!state.ui.giftSheet) return;
+        const n = parseInt(value, 10);
+        state.ui.giftSheet.amount = Number.isFinite(n) ? n : '';
+      };
+
+      window.selectGiftMessagePreset = function(idx) {
+        if (!state.ui.giftSheet) return;
+        state.ui.giftSheet.message = GIFT_MESSAGE_PRESETS[idx];
+        render();
+      };
+
+      // 별이 반짝이며 날아가는 연출 - 실제 애니메이션 대상(받는 사람 화면)은 알 수 없으니
+      // "화면 위로 날아간다"는 느낌만 주는 1회성 연출. render()를 거치지 않고 body에 직접
+      // 붙였다 애니메이션 종료 시 제거한다 (다른 곳의 토스트와 같은 성격의 일회성 이펙트).
+      function playGiftFlyAnimation() {
+        const el = document.createElement('div');
+        el.className = 'gift-star-fly';
+        el.textContent = '⭐';
+        document.body.appendChild(el);
+        const cleanup = () => { if (el.parentElement) el.remove(); };
+        el.addEventListener('animationend', cleanup);
+        setTimeout(cleanup, 1500);
+      }
+
+      window.sendCandyGift = async function() {
+        const g = state.ui.giftSheet;
+        if (!g) return;
+        const amount = parseInt(g.amount, 10);
+        if (!Number.isFinite(amount) || amount < 5) { showToast('최소 5개부터 선물할 수 있어요.'); return; }
+        if (state.user.points < amount) { showToast(`별사탕이 부족해요! (보유: ${state.user.points}개 / 필요: ${amount}개)`); return; }
+        const now = Date.now();
+        if (now - _lastGiftSentAt < 3000) { showToast('잠시 후 다시 시도해주세요.'); return; }
+        _lastGiftSentAt = now;
+
+        try {
+          const result = await apiJsonAwait('/api/points/gift', 'POST', {
+            from_user_id: state.user.id,
+            from_user_name: state.user.name,
+            to_user_id: g.toUserId,
+            to_user_name: g.toUserName,
+            amount,
+            message: g.message || '',
+            route_id: g.routeId,
+          });
+          state.user.points = result.new_balance;
+          const toUserName = g.toUserName;
+          state.ui.giftSheet = null;
+          saveState();
+          render();
+          playGiftFlyAnimation();
+          showToast(`⭐ ${toUserName}님에게 ${amount}개 선물했어요!`);
+          if (result.bonus_given > 0) {
+            setTimeout(() => showToast(`🌟 답례 보너스! +${result.bonus_given}개 추가 지급됐어요`), 1600);
+          }
+        } catch (err) {
+          showToast(err.message || '선물에 실패했어요.');
+        }
+      };
+
+      // 받은 선물함 - candy_gifts를 to_user_id로 직접 조회한다(별도 inbox 테이블 없음).
+      // 열 때마다 새로 불러온다 - deco/스킨 카탈로그와 달리 선물은 자주 들어오는 데이터라
+      // "한 번만 로드" 캐시를 쓰면 새로 받은 선물이 안 보일 수 있다.
+      window.openGiftbox = function() {
+        if (!state.user.isLoggedIn) { showToast('로그인 후 선물함을 볼 수 있어요 🔐'); openLoginSheet('initial'); return; }
+        state.ui.bottomSheet = 'giftbox';
+        render();
+        refreshGiftbox();
+      };
+
+      async function refreshGiftbox() {
+        try {
+          const res = await fetch(`${API_BASE}/api/points/gifts?user_id=${encodeURIComponent(state.user.id)}`);
+          const data = await res.json();
+          state.giftbox.gifts = data.gifts || [];
+          state.giftbox.loaded = true;
+          render();
+        } catch (e) { console.warn('[giftbox] load failed', e); }
+        apiJson('/api/points/gifts/read', 'POST', { user_id: state.user.id });
+      }
+
+      window.replyGift = function(fromUserId, fromUserName) {
+        openGiftSheet(fromUserId, fromUserName, null);
+      };
 
       // Downscales/re-encodes via the same helper used for 경유지 사진, then opens the editor with
       // an empty layer set. object-fit:cover in the preview (and drawCoverImage() at save time)
@@ -3805,7 +3946,7 @@
 
         // 2b. Lock background scroll while a sheet/overlay covers the screen
         // (prevents the page behind a bottom sheet from rubber-banding on mobile).
-        const anyOverlayOpen = !!(state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.stopEditor || state.ui.followRouteId || state.ui.loginSheet || state.ui.profileSheet || state.ui.photoLightbox || state.ui.chatSheet);
+        const anyOverlayOpen = !!(state.ui.bottomSheet || state.ui.collabSheet || state.ui.collabEditSheet || state.ui.stopEditor || state.ui.followRouteId || state.ui.loginSheet || state.ui.profileSheet || state.ui.photoLightbox || state.ui.chatSheet || state.ui.giftSheet);
         // overflow:hidden on body alone doesn't stop <html> from scrolling - lock both.
         document.body.style.overflow = anyOverlayOpen ? 'hidden' : '';
         document.documentElement.style.overflow = anyOverlayOpen ? 'hidden' : '';
@@ -4020,6 +4161,7 @@
                     </div>
                     <div class="card-actions">
                       ${r.creator !== state.user.name ? `
+                        <button class="icon-btn" style="width:30px; height:30px; font-size:14px; color:#FFA500;" onclick="openGiftSheet('${esc(r.creatorId)}', '${esc(r.creator)}', '${r.id}')" title="별사탕 선물하기">🌟</button>
                         <button class="sub-btn ${isSub ? 'subscribed' : ''}" data-creator="${esc(r.creator)}" onclick="toggleSubscribe(this.dataset.creator)">
                           ${isSub ? '구독중' : '구독'}
                         </button>
@@ -4309,6 +4451,7 @@
                   </div>
                   <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
                     <span style="font-size:12px; font-weight:800; color:var(--primary);">✓ ${myCheckedCount}/${totalSteps}</span>
+                    ${route.creator !== state.user.name ? `<button class="icon-btn" style="width:28px; height:28px; font-size:12px; color:#FFA500;" onclick="openGiftSheet('${esc(route.creatorId)}', '${esc(route.creator)}', '${route.id}')" title="별사탕 선물하기">🌟</button>` : ''}
                     <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openRouteChat('${route.id}')" title="채팅">💬</button>
                     <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openShareSheet('${route.id}')" title="공유">↗</button>
                     <button class="icon-btn" style="width:28px; height:28px; font-size:12px;" onclick="openCollabSheet('${route.id}')" title="함께가기">👥</button>
@@ -4477,6 +4620,78 @@
           }
         }
 
+        // A2b. 별사탕 선물하기 모달 (giftSheet)
+        if (state.ui.giftSheet) {
+          const g = state.ui.giftSheet;
+          const amount = Number.isFinite(parseInt(g.amount, 10)) ? parseInt(g.amount, 10) : 0;
+          html += `
+            <div class="sheet-backdrop" onclick="closeGiftSheet()">
+              <div class="${bottomSheetClass}" style="background:#FFF8DC; position:relative; overflow:hidden;" onclick="event.stopPropagation()">
+                ${renderRouteSkinWeather('⭐', 10)}
+                <div style="display:flex; justify-content:space-between; align-items:center; position:relative;">
+                  <div style="font-size:16px; font-weight:900;">${esc(g.toUserName)}님에게 별사탕 선물</div>
+                  <button class="icon-btn" onclick="closeGiftSheet()">✕</button>
+                </div>
+                <div style="font-size:13px; font-weight:800; color:#B8860B; position:relative;">내 보유 <span style="color:#B8860B; font-weight:900;">⭐ ${state.user.points}개</span></div>
+
+                <div style="position:relative;">
+                  <div style="font-size:12px; font-weight:800; color:var(--text-sub); margin-bottom:6px;">보낼 금액</div>
+                  <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    ${GIFT_AMOUNT_PRESETS.map(a => `
+                      <div class="gift-amount-chip ${amount === a ? 'selected' : ''}" onclick="selectGiftAmount(${a})">⭐ ${a}</div>
+                    `).join('')}
+                  </div>
+                  <input type="number" min="5" placeholder="직접 입력 (최소 5개)" value="${GIFT_AMOUNT_PRESETS.includes(amount) ? '' : (amount || '')}" oninput="setGiftCustomAmount(this.value)" style="margin-top:8px; width:100%; border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:13px;" />
+                </div>
+
+                <div style="position:relative;">
+                  <div style="font-size:12px; font-weight:800; color:var(--text-sub); margin-bottom:6px;">메시지</div>
+                  ${GIFT_MESSAGE_PRESETS.map((m, i) => `
+                    <div class="gift-msg-chip ${g.message === m ? 'selected' : ''}" onclick="selectGiftMessagePreset(${i})">${esc(m)}</div>
+                  `).join('')}
+                  <textarea placeholder="직접 메시지 입력" oninput="state.ui.giftSheet.message=this.value" style="width:100%; border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; resize:none; min-height:44px;">${esc(g.message)}</textarea>
+                </div>
+
+                <button class="cta-btn" style="position:relative; padding:14px; font-size:14px; background:linear-gradient(135deg, #FFD700, #FFA500); color:#4A3300;" onclick="sendCandyGift()">⭐ ${amount || 0}개 선물하기</button>
+              </div>
+            </div>
+          `;
+        }
+
+        // A2c. 받은 선물함 (state.ui.bottomSheet === 'giftbox')
+        if (state.ui.bottomSheet === 'giftbox') {
+          const gifts = state.giftbox.gifts;
+          html += `
+            <div class="sheet-backdrop" onclick="closeSheet()">
+              <div class="${bottomSheetClass}" onclick="event.stopPropagation()">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div style="font-size:16px; font-weight:900;">🌟 받은 선물함</div>
+                  <button class="icon-btn" onclick="closeSheet()">✕</button>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:8px; max-height:60vh; overflow-y:auto;">
+                  ${gifts.length === 0 ? `
+                    <div style="text-align:center; padding:30px; color:var(--text-sub); font-size:13px;">
+                      ${state.giftbox.loaded ? '아직 받은 별사탕 선물이 없어요.' : '불러오는 중...'}
+                    </div>
+                  ` : gifts.map(gift => `
+                    <div style="padding:12px; border-radius:14px; background:${gift.is_read ? '#FFF' : 'rgba(255,215,0,0.10)'}; border:1px solid ${gift.is_read ? 'var(--border)' : '#FFD700'};">
+                      <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div style="font-size:13px; font-weight:800;">${esc(gift.from_user_name || '누군가')}</div>
+                        <div style="font-size:14px; font-weight:900; color:#B8860B;">⭐ ${gift.amount}개${gift.is_reply_bonus ? ' <span style="font-size:11px; color:#FFA500;">(답례 보너스)</span>' : ''}</div>
+                      </div>
+                      ${gift.message ? `<div style="font-size:12px; color:var(--text-sub); margin-top:4px;">${esc(gift.message)}</div>` : ''}
+                      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+                        <span style="font-size:10px; color:#999;">${gift.created_at}</span>
+                        <button class="btn-secondary" style="padding:4px 10px; font-size:11px;" onclick="replyGift('${esc(gift.from_user_id)}', '${esc(gift.from_user_name || '')}')">감사 인사 보내기</button>
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
         // A3. Route Chat Panel (따라가기: 루트 전체가 공유하는 단일 채팅창)
         if (state.ui.chatSheet) {
           const chatRoute = state.routes.find(r => r.id === state.ui.chatSheet.routeId);
@@ -4578,6 +4793,7 @@
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <div style="font-size:16px; font-weight:900;">알림 수신함</div>
                   <div style="display:flex; gap:6px;">
+                    <button class="cta-btn" style="background:linear-gradient(135deg,#FFD700,#FFA500); color:#4A3300; padding:4px 8px; font-size:11px;" onclick="openGiftbox()">🌟 선물함</button>
                     <button class="cta-btn" style="background:#EEE; color:var(--text); padding:4px 8px; font-size:11px;" onclick="markAllNotifsRead()">모두 읽음</button>
                     <button class="icon-btn" onclick="closeSheet()">✕</button>
                   </div>
@@ -4594,18 +4810,21 @@
                     <div style="text-align:center; padding:30px; color:var(--text-sub); font-size:13px;">
                       아직 알림이 없어요. 좋아하는 크리에이터를 구독해보세요!
                     </div>
-                  ` : state.notifications.map(n => `
-                    <div style="display:flex; align-items:flex-start; gap:10px; padding:10px; border-radius:12px; background:${n.read ? '#FFF' : 'rgba(139,108,255,0.06)'}; border:1px solid ${n.read ? 'var(--border)' : 'var(--primary)'}; cursor:pointer;" onclick="clickNotifItem(${n.id}, '${n.routeId}')">
+                  ` : state.notifications.map(n => {
+                    const isGift = n.type === 'gift';
+                    return `
+                    <div style="display:flex; align-items:flex-start; gap:10px; padding:10px; border-radius:12px; background:${n.read ? '#FFF' : (isGift ? 'rgba(255,215,0,0.10)' : 'rgba(139,108,255,0.06)')}; border:1px solid ${n.read ? 'var(--border)' : (isGift ? '#FFD700' : 'var(--primary)')}; cursor:pointer;" onclick="clickNotifItem(${n.id}, '${n.routeId}')">
                       <div class="avatar-wrapper" style="width:34px; height:34px; font-size:18px;">
-                        ${hashNameToAvatar(n.creator)}
+                        ${isGift ? '🌟' : hashNameToAvatar(n.creator)}
                       </div>
                       <div style="flex:1;">
                         <div style="font-size:13px; font-weight:700; line-height:1.4;">${esc(n.title)}</div>
+                        ${isGift && n.body ? `<div style="font-size:12px; color:var(--text-sub); margin-top:2px;">${esc(n.creator)}: ${esc(n.body)}</div>` : ''}
                         <div style="font-size:11px; color:#999; margin-top:2px;">${n.time}</div>
                       </div>
-                      ${!n.read ? `<div style="width:8px; height:8px; border-radius:50%; background:var(--primary); margin-top:6px;"></div>` : ''}
+                      ${!n.read ? `<div style="width:8px; height:8px; border-radius:50%; background:${isGift ? '#FFD700' : 'var(--primary)'}; margin-top:6px;"></div>` : ''}
                     </div>
-                  `).join('')}
+                  `;}).join('')}
                 </div>
               </div>
             </div>
@@ -5274,7 +5493,9 @@
       // back-button both need. Returns true if something was actually closed.
       function closeTopmostOverlay() {
         if (state.ui.loginSheet && !state.user.isLoggedIn) return false; // 최초 로그인 유도는 닫지 않음
-        if (state.ui.photoLightbox && _lightboxZoom.scale > 1) {
+        if (state.ui.giftSheet) {
+          closeGiftSheet();
+        } else if (state.ui.photoLightbox && _lightboxZoom.scale > 1) {
           // 확대된 상태에서 뒤로가기/Esc는 사진 보기 자체를 나가지 않고 원래 크기로 축소만 한다.
           // render()가 다시 history entry를 채워 넣으므로(2d), 다음 뒤로가기에서 진짜로 닫힌다.
           resetLightboxZoom();

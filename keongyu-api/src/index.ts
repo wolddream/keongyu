@@ -31,6 +31,9 @@
  *   GET  /api/route-skin/items             -> 루트카드 스킨 아이템 카탈로그 (144개, 12파츠)
  *   GET  /api/route-skin/inventory?user_id= -> 사용자가 소유한 루트카드 스킨 아이템 id 목록
  *   POST /api/route-skin/buy               -> 스킨 아이템 구매 (서버가 별사탕 차감 + 인벤토리 기록)
+ *   POST /api/points/gift                  -> 다른 유저에게 별사탕 선물 (일일 한도/답례 보너스 서버 검증)
+ *   GET  /api/points/gifts?user_id=        -> 받은 선물함 목록
+ *   POST /api/points/gifts/read            -> 선물함 전체 읽음 처리
  *   ※ Turnstile 봇 방지는 사용자 요청으로 중단됨 (verifyTurnstile()는 남겨뒀지만 미호출)
  *   GET  /oauth/kakao/callback             -> Kakao OAuth redirect target
  *   GET  /api/admin/verify                 -> checks X-ADMIN-TOKEN header against env.ADMIN_TOKEN
@@ -57,6 +60,7 @@ import { handleSendEmailCode, handleVerifyEmailCode } from "./auth";
 import { handleVerifyPayment } from "./points";
 import { handleGetDecoItems, handleGetDecoInventory, handleBuyDecoItem, handleRandomDeco, handleSaveDecoCreation, handleGetDecoCreations } from "./deco";
 import { handleGetRouteSkinItems, handleGetRouteSkinInventory, handleBuyRouteSkinItem } from "./routeSkin";
+import { handleSendGift, handleGetGiftbox, handleMarkGiftboxRead } from "./candy";
 
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
@@ -173,6 +177,17 @@ export default {
 			}
 			if (url.pathname === "/api/route-skin/buy" && request.method === "POST") {
 				return cors(await handleBuyRouteSkinItem(request, env));
+			}
+			if (url.pathname === "/api/points/gift" && request.method === "POST") {
+				return cors(await handleSendGift(request, env));
+			}
+			if (url.pathname === "/api/points/gifts" && request.method === "GET") {
+				const userId = url.searchParams.get("user_id");
+				if (!userId) return cors(json({ error: "user_id is required" }, 400));
+				return cors(await handleGetGiftbox(env, userId));
+			}
+			if (url.pathname === "/api/points/gifts/read" && request.method === "POST") {
+				return cors(await handleMarkGiftboxRead(request, env));
 			}
 			if (url.pathname === "/oauth/kakao/callback" && request.method === "GET") {
 				return handleKakaoCallback(request, env); // full-page redirect, no CORS needed
