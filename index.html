@@ -153,6 +153,21 @@
       .route-skin-holo-filter { animation: route-skin-holo 4s linear infinite; }
       @keyframes route-skin-holo { 0% { filter: saturate(1.6) hue-rotate(0deg); } 100% { filter: saturate(1.6) hue-rotate(360deg); } }
 
+      /* 프레임을 따라 한 바퀴 도는 이모지(기차/반짝임/나비 등) - 카드 네 모서리(0%/100%)를
+         잇는 직선 이동이 곧 사각형 테두리를 그대로 따라가는 경로가 된다. */
+      .route-skin-frame-runner {
+        position: absolute; left: 0; top: 0; font-size: 16px; transform: translate(-50%, -50%);
+        animation: route-skin-border-run 7s linear infinite; pointer-events: none; z-index: 3;
+        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.25));
+      }
+      @keyframes route-skin-border-run {
+        0%   { left: 0%;   top: 0%; }
+        25%  { left: 100%; top: 0%; }
+        50%  { left: 100%; top: 100%; }
+        75%  { left: 0%;   top: 100%; }
+        100% { left: 0%;   top: 0%; }
+      }
+
       /* 별사탕 선물하기 - 금색 별이 반짝이며 날아가는 1회성 연출 (playGiftFlyAnimation) */
       .gift-star-fly {
         position: fixed; left: 50%; bottom: 110px; font-size: 32px; z-index: 250;
@@ -1980,6 +1995,9 @@
         '3px solid #8B6CFF', '4px solid #F5C518',
         '3px dashed #FF7AA8',
       ];
+      // 정적 테두리 색만으로는 밋밋한 상위 등급 프레임 3종에는, 테두리를 따라 한 바퀴 도는
+      // 이모지도 같이 얹는다(renderRouteSkinFrameRunner) - 나머지는 null(움직임 없음).
+      const FRAME_RUNNER_PALETTE = [null, null, null, null, null, null, null, null, null, '🚂', '✨', '🦋'];
       const FILTER_AURA_PALETTE = [
         'brightness(1.06)', 'sepia(0.12) brightness(1.03)', 'saturate(0.85) brightness(1.04)', 'contrast(0.95) brightness(1.05)', 'contrast(1.08) saturate(1.05)',
         'contrast(0.92) brightness(1.02) sepia(0.06)', 'brightness(1.05)', 'brightness(1.08) saturate(1.1)', 'sepia(0.18) contrast(0.95)',
@@ -2006,10 +2024,14 @@
       }
 
       // part 안에서 이 아이템이 몇 번째(0~11, 가격 오름차순 - seed 파일/서버 SELECT 정렬과 동일)인지.
-      // 위 팔레트들의 인덱스로 그대로 쓴다.
+      // 위 팔레트들의 인덱스로 그대로 쓴다. 같은 파츠 안에서 가격이 같은 등급(SR 2개는 항상 30개로
+      // 동률)의 동점 처리를 id 문자열 비교(a.id.localeCompare)로 하면 "..._10"이 "..._9"보다
+      // 사전순으로 앞에 와서(문자 '1' < '9') 인덱스 9·10이 서로 뒤바뀌는 실제 버그가 있었다 -
+      // id 끝의 숫자를 뽑아 수치로 비교해야 seed 파일 순서(_0.._11)와 항상 일치한다.
       function routeSkinItemIndex(item) {
         if (!item) return -1;
-        const siblings = state.routeSkinShop.items.filter(i => i.part === item.part).sort((a, b) => a.price - b.price || a.id.localeCompare(b.id));
+        const idNum = (id) => parseInt((id.match(/_(\d+)$/) || [])[1] || '0', 10);
+        const siblings = state.routeSkinShop.items.filter(i => i.part === item.part).sort((a, b) => a.price - b.price || idNum(a.id) - idNum(b.id));
         return siblings.findIndex(i => i.id === item.id);
       }
 
@@ -2017,11 +2039,16 @@
       // 미리보기 카드가 전부 이 함수 하나로 렌더링되어야 미리보기와 실제 화면이 어긋나지 않는다.
       function getRouteSkinVisuals(route) {
         const skin = (route && route.skin) || {};
-        const v = { bgCss: '', frameCss: '', filterCss: '', filterClass: '', titleBadge: '', authorBadge: '', stickerHtml: '', weatherHtml: '' };
+        const v = { bgCss: '', frameCss: '', filterCss: '', filterClass: '', titleBadge: '', authorBadge: '', stickerHtml: '', weatherHtml: '', frameRunnerHtml: '' };
         const bg = findRouteSkinItem(skin.card_bg);
         if (bg) { const idx = routeSkinItemIndex(bg); if (idx >= 0) v.bgCss = CARD_BG_PALETTE[idx]; }
         const frame = findRouteSkinItem(skin.frame);
-        if (frame) { const idx = routeSkinItemIndex(frame); if (idx >= 0) v.frameCss = FRAME_PALETTE[idx]; }
+        if (frame) {
+          const idx = routeSkinItemIndex(frame);
+          if (idx >= 0) v.frameCss = FRAME_PALETTE[idx];
+          const runner = FRAME_RUNNER_PALETTE[idx];
+          if (runner) v.frameRunnerHtml = `<div class="route-skin-frame-runner" title="${esc(frame.name)}">${runner}</div>`;
+        }
         const filterAura = findRouteSkinItem(skin.filter_aura);
         if (filterAura) {
           const idx = routeSkinItemIndex(filterAura);
@@ -2060,7 +2087,7 @@
         if (v.bgCss) styles.push(`background:${v.bgCss}`);
         if (v.frameCss) styles.push(`border:${v.frameCss}`);
         if (v.filterCss) styles.push(`filter:${v.filterCss}`);
-        if (v.stickerHtml || v.weatherHtml) styles.push('position:relative', 'overflow:hidden');
+        if (v.stickerHtml || v.weatherHtml || v.frameRunnerHtml) styles.push('position:relative', 'overflow:hidden');
         const style = styles.length ? ` style="${styles.join('; ')}"` : '';
         const cls = v.filterClass ? ` ${v.filterClass}` : '';
         return { style, cls };
@@ -2649,6 +2676,7 @@
             </div>
             ${v.stickerHtml}
             ${v.weatherHtml}
+            ${v.frameRunnerHtml}
           </div>
         `;
       }
@@ -4312,6 +4340,7 @@
                   </div>
                   ${skinV.stickerHtml}
                   ${skinV.weatherHtml}
+                  ${skinV.frameRunnerHtml}
                 </div>
               `;
             });
@@ -4452,6 +4481,7 @@
                     </div>
                     ${skinV.stickerHtml}
                     ${skinV.weatherHtml}
+                    ${skinV.frameRunnerHtml}
                   </div>
                 `;}).join('')}
               </div>
@@ -4625,6 +4655,7 @@
                 </div>
                 ${skinV.stickerHtml}
                 ${skinV.weatherHtml}
+                ${skinV.frameRunnerHtml}
 
                 ${route.isCollaborative ? `
                   <div style="padding:8px 16px; background:#FAFAF8; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
