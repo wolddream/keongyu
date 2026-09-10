@@ -1164,8 +1164,10 @@
             chatMessages: [], // 현재 열린 chatSheet의 메시지 목록
             chatLoading: false,
             chatDraft: '', // 입력 중인 메시지 - state에 없으면 폴링으로 인한 재렌더에 입력 중이던 글자가 날아감
-            nearbyLoading: false // "근처" 필터: GPS 위치 조회 중
+            nearbyLoading: false, // "근처" 필터: GPS 위치 조회 중
+            decoStudio: null // { photo, category, selectedPart, layers: {partKey:{itemId,x,y,scale,rotation}}, history } - 사진 꾸미기 편집 상태
           },
+          deco: { items: [], ownedIds: [], creations: [], loaded: false }, // 서버 카탈로그/인벤토리/작품 캐시 (openDecoTab에서 채움)
           tempImages: []
         };
       }
@@ -1201,6 +1203,8 @@
         if (state.filter.nearby === undefined) state.filter.nearby = false;
         if (state.filter.nearbyGps === undefined) state.filter.nearbyGps = null;
         if (state.ui.nearbyLoading === undefined) state.ui.nearbyLoading = false;
+        if (state.ui.decoStudio === undefined) state.ui.decoStudio = null;
+        if (state.deco === undefined) state.deco = { items: [], ownedIds: [], creations: [], loaded: false };
         if (state.challenge.todayCheck === undefined) state.challenge.todayCheck = null;
         if (state.challenge.completed === undefined) state.challenge.completed = false;
         state.routes.forEach(r => {
@@ -1319,6 +1323,7 @@
         state.ui.tab = tab;
         saveState();
         render();
+        if (tab === 'deco') loadDecoCatalogIfNeeded();
       };
 
       // Hidden admin entry point: 5 taps on the logo within 3s opens admin.html in a new tab
@@ -1753,6 +1758,28 @@
         { type: 'bike', label: '자전거', emoji: '🚲', defaultText: '자전거 8분 (1.5km)' }
       ];
 
+      // 사진 꾸미기: z1~z12 레이어 순서 (keongyu-api/src/deco.ts의 part 값과 반드시 일치해야 함).
+      const DECO_PARTS = [
+        { key: 'z1', label: '바닥', emoji: '🟫' },
+        { key: 'z2', label: '하늘', emoji: '🌤️' },
+        { key: 'z3', label: '분위기', emoji: '🌫️' },
+        { key: 'z4', label: '배경', emoji: '🏞️' },
+        { key: 'z5', label: '조명', emoji: '💡' },
+        { key: 'z6', label: '토핑', emoji: '🍒' },
+        { key: 'z7', label: '소품', emoji: '🪑' },
+        { key: 'z8', label: '이펙트', emoji: '💨' },
+        { key: 'z9', label: '스티커', emoji: '⭐' },
+        { key: 'z10', label: '프레임', emoji: '🖼️' },
+        { key: 'z11', label: '문구', emoji: '📝' },
+        { key: 'z12', label: '파티클', emoji: '✨' }
+      ];
+      const DECO_CATEGORIES = [
+        { key: 'landscape', label: '풍경', emoji: '🏞️' },
+        { key: 'food', label: '음식', emoji: '🍽️' }
+      ];
+      const DECO_RANDOM_COST = 10;
+      const DECO_CANVAS_SIZE = 640; // 저장 시 합성되는 정사각형 PNG의 해상도 (편집기 미리보기는 DECO_PREVIEW_SIZE)
+
       function newStopDraft() {
         return {
           editingIndex: null,
@@ -2134,6 +2161,443 @@
       };
 
       // ==========================================
+      // 2b. 사진 꾸미기 (Deco Studio) - 풍경/음식 사진에 별사탕으로 산 레이어 아이템을 올려 합성
+      // ==========================================
+      const DECO_PREVIEW_SIZE = 320; // 편집기 화면에 그려지는 정사각형 캔버스의 CSS px 크기
+      const DECO_BOX_RATIO = 0.22;   // scale=1일 때 레이어 박스 크기 = 캔버스 크기 * 이 비율
+      const RARITY_COLORS = { N: '#9CA3AF', R: '#3B82F6', SR: '#A855F7', SSR: '#F59E0B' };
+
+      async function loadDecoCatalogIfNeeded() {
+        if (state.deco.loaded) return;
+        try {
+          const res = await fetch(`${API_BASE}/api/deco/items`);
+          const data = await res.json();
+          state.deco.items = data.items || [];
+        } catch (e) { console.warn('[deco] items load failed', e); }
+        await Promise.all([refreshDecoInventory(), refreshDecoCreations()]);
+        state.deco.loaded = true;
+        render();
+      }
+
+      async function refreshDecoInventory() {
+        try {
+          const res = await fetch(`${API_BASE}/api/deco/inventory?user_id=${encodeURIComponent(state.user.id)}`);
+          const data = await res.json();
+          state.deco.ownedIds = data.item_ids || [];
+        } catch (e) { console.warn('[deco] inventory load failed', e); }
+      }
+
+      async function refreshDecoCreations() {
+        try {
+          const res = await fetch(`${API_BASE}/api/deco/creations?user_id=${encodeURIComponent(state.user.id)}`);
+          const data = await res.json();
+          state.deco.creations = data.creations || [];
+        } catch (e) { console.warn('[deco] creations load failed', e); }
+      }
+
+      // Downscales/re-encodes via the same helper used for 경유지 사진, then opens the editor with
+      // an empty layer set. object-fit:cover in the preview (and drawCoverImage() at save time)
+      // crop non-square photos identically, so what's shown while editing matches what gets saved.
+      window.handleDecoPhotoInput = async function(e, category) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const dataUrl = await resizeImageFile(file);
+        if (!dataUrl) { showToast('사진을 불러오지 못했어요.'); return; }
+        state.ui.decoStudio = { photo: dataUrl, category, selectedPart: DECO_PARTS[0].key, layers: {}, history: [] };
+        saveState();
+        render();
+        loadDecoCatalogIfNeeded();
+      };
+
+      window.closeDecoStudio = function() {
+        state.ui.decoStudio = null;
+        saveState();
+        render();
+      };
+
+      window.selectDecoPart = function(part) {
+        if (!state.ui.decoStudio) return;
+        state.ui.decoStudio.selectedPart = part;
+        render();
+      };
+
+      function pushDecoHistory() {
+        const ds = state.ui.decoStudio;
+        if (!ds) return;
+        ds.history.push(JSON.parse(JSON.stringify(ds.layers)));
+        if (ds.history.length > 20) ds.history.shift();
+      }
+
+      window.equipDecoItem = function(itemId) {
+        const ds = state.ui.decoStudio;
+        const item = state.deco.items.find(i => i.id === itemId);
+        if (!ds || !item) return;
+        pushDecoHistory();
+        ds.layers[item.part] = { itemId: item.id, x: 50, y: 50, scale: 1, rotation: 0 };
+        ds.selectedPart = item.part;
+        saveState();
+        render();
+      };
+
+      window.unequipDecoPart = function(part) {
+        const ds = state.ui.decoStudio;
+        if (!ds || !ds.layers[part]) return;
+        pushDecoHistory();
+        delete ds.layers[part];
+        saveState();
+        render();
+      };
+
+      // 상점 그리드의 아이템 카드 하나를 탭했을 때: 이미 장착 중이면 해제, 보유 중이면 장착,
+      // 안 샀으면 구매(구매 성공 시 buyDecoItem이 바로 장착까지 이어감).
+      window.handleDecoItemTap = function(itemId) {
+        const ds = state.ui.decoStudio;
+        const item = state.deco.items.find(i => i.id === itemId);
+        if (!ds || !item) return;
+        const equipped = ds.layers[item.part] && ds.layers[item.part].itemId === item.id;
+        if (equipped) { unequipDecoPart(item.part); return; }
+        if (state.deco.ownedIds.includes(item.id)) { equipDecoItem(item.id); return; }
+        buyDecoItem(item.id);
+      };
+
+      window.buyDecoItem = async function(itemId) {
+        const item = state.deco.items.find(i => i.id === itemId);
+        if (!item) return;
+        if (!state.user.isLoggedIn) {
+          showToast('로그인 후 구매할 수 있어요 🔐');
+          openLoginSheet('initial');
+          return;
+        }
+        if (state.user.points < item.price) {
+          showToast(`별사탕이 부족해요! (보유: ${state.user.points}개 / 필요: ${item.price}개)`);
+          return;
+        }
+        try {
+          const result = await apiJsonAwait('/api/deco/buy', 'POST', { user_id: state.user.id, item_id: item.id });
+          if (!state.deco.ownedIds.includes(item.id)) state.deco.ownedIds.push(item.id);
+          state.user.points = result.points;
+          showToast(`구매 완료! ⭐-${item.price}`);
+          equipDecoItem(item.id);
+        } catch (err) {
+          showToast(err.message || '구매에 실패했어요.');
+        }
+      };
+
+      window.randomDecorate = async function() {
+        const ds = state.ui.decoStudio;
+        if (!ds) return;
+        if (!state.user.isLoggedIn) {
+          showToast('로그인 후 이용할 수 있어요 🔐');
+          openLoginSheet('initial');
+          return;
+        }
+        if (state.user.points < DECO_RANDOM_COST) {
+          showToast(`별사탕이 부족해요! (보유: ${state.user.points}개 / 필요: ${DECO_RANDOM_COST}개)`);
+          return;
+        }
+        try {
+          const result = await apiJsonAwait('/api/deco/random', 'POST', { user_id: state.user.id, category: ds.category });
+          state.user.points = result.points;
+          if (result.item) {
+            if (!state.deco.ownedIds.includes(result.item.id)) state.deco.ownedIds.push(result.item.id);
+            pushDecoHistory();
+            ds.layers[result.item.part] = { itemId: result.item.id, x: 50, y: 50, scale: 1, rotation: 0 };
+            ds.selectedPart = result.item.part;
+            showToast(`🎁 랜덤 뽑기: ${result.item.emoji} ${result.item.name} (${result.item.rarity}) 획득!`);
+          }
+          saveState();
+          render();
+        } catch (err) {
+          showToast(err.message || '랜덤 꾸미기에 실패했어요.');
+        }
+      };
+
+      window.undoDecoLayer = function() {
+        const ds = state.ui.decoStudio;
+        if (!ds || ds.history.length === 0) return;
+        ds.layers = ds.history.pop();
+        saveState();
+        render();
+      };
+
+      window.resetDecoLayers = function() {
+        const ds = state.ui.decoStudio;
+        if (!ds || Object.keys(ds.layers).length === 0) return;
+        pushDecoHistory();
+        ds.layers = {};
+        saveState();
+        render();
+      };
+
+      // 캔버스 위 레이어 드래그/리사이즈/회전. render()를 매 pointermove마다 부르면(전체 innerHTML
+      // 재생성) 끊기므로, 드래그 중에는 해당 레이어 DOM만 직접 갱신하고 pointerup에서 한 번만 state에
+      // 커밋 + render()한다 (다른 곳의 사진 촬영/미리보기 갱신과 같은 이유로 전체 렌더를 피하는 패턴).
+      function applyDecoLayerTransform(part, layer, containerSize) {
+        const wrapper = document.getElementById('deco-layer-' + part);
+        if (!wrapper) return;
+        const box = containerSize * DECO_BOX_RATIO * layer.scale;
+        wrapper.style.left = layer.x + '%';
+        wrapper.style.top = layer.y + '%';
+        wrapper.style.width = box + 'px';
+        wrapper.style.height = box + 'px';
+        wrapper.style.transform = `translate(-50%, -50%) rotate(${layer.rotation}deg)`;
+        const emojiEl = wrapper.querySelector('.deco-emoji');
+        if (emojiEl) emojiEl.style.fontSize = (box * 0.85) + 'px';
+      }
+
+      window.startDecoLayerMove = function(e, part) {
+        e.preventDefault(); e.stopPropagation();
+        const ds = state.ui.decoStudio;
+        const layer = ds && ds.layers[part];
+        const canvas = document.getElementById('deco-canvas');
+        if (!layer || !canvas) return;
+        pushDecoHistory();
+        ds.selectedPart = part;
+        const rect = canvas.getBoundingClientRect();
+        _decoDrag = { mode: 'move', part, rect, startClientX: e.clientX, startClientY: e.clientY, startX: layer.x, startY: layer.y };
+        render();
+      };
+
+      window.startDecoLayerResize = function(e, part) {
+        e.preventDefault(); e.stopPropagation();
+        const ds = state.ui.decoStudio;
+        const layer = ds && ds.layers[part];
+        const canvas = document.getElementById('deco-canvas');
+        if (!layer || !canvas) return;
+        pushDecoHistory();
+        const rect = canvas.getBoundingClientRect();
+        const cx = rect.left + rect.width * layer.x / 100;
+        const cy = rect.top + rect.height * layer.y / 100;
+        const startDist = Math.hypot(e.clientX - cx, e.clientY - cy) || 1;
+        _decoDrag = { mode: 'resize', part, rect, cx, cy, startDist, startScale: layer.scale };
+      };
+
+      window.startDecoLayerRotate = function(e, part) {
+        e.preventDefault(); e.stopPropagation();
+        const ds = state.ui.decoStudio;
+        const layer = ds && ds.layers[part];
+        const canvas = document.getElementById('deco-canvas');
+        if (!layer || !canvas) return;
+        pushDecoHistory();
+        const rect = canvas.getBoundingClientRect();
+        const cx = rect.left + rect.width * layer.x / 100;
+        const cy = rect.top + rect.height * layer.y / 100;
+        const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI;
+        _decoDrag = { mode: 'rotate', part, cx, cy, startAngle, startRotation: layer.rotation };
+      };
+
+      document.addEventListener('pointermove', e => {
+        if (!_decoDrag) return;
+        const ds = state.ui.decoStudio;
+        const layer = ds && ds.layers[_decoDrag.part];
+        if (!layer) { _decoDrag = null; return; }
+        if (_decoDrag.mode === 'move') {
+          const dxPct = (e.clientX - _decoDrag.startClientX) / _decoDrag.rect.width * 100;
+          const dyPct = (e.clientY - _decoDrag.startClientY) / _decoDrag.rect.height * 100;
+          layer.x = Math.min(100, Math.max(0, _decoDrag.startX + dxPct));
+          layer.y = Math.min(100, Math.max(0, _decoDrag.startY + dyPct));
+          applyDecoLayerTransform(_decoDrag.part, layer, _decoDrag.rect.width);
+        } else if (_decoDrag.mode === 'resize') {
+          const dist = Math.hypot(e.clientX - _decoDrag.cx, e.clientY - _decoDrag.cy) || 1;
+          layer.scale = Math.min(3, Math.max(0.3, _decoDrag.startScale * (dist / _decoDrag.startDist)));
+          applyDecoLayerTransform(_decoDrag.part, layer, _decoDrag.rect.width);
+        } else if (_decoDrag.mode === 'rotate') {
+          const angle = Math.atan2(e.clientY - _decoDrag.cy, e.clientX - _decoDrag.cx) * 180 / Math.PI;
+          layer.rotation = _decoDrag.startRotation + (angle - _decoDrag.startAngle);
+          applyDecoLayerTransform(_decoDrag.part, layer, _decoDrag.rect.width);
+        }
+      });
+      document.addEventListener('pointerup', () => {
+        if (!_decoDrag) return;
+        _decoDrag = null;
+        saveState();
+        render();
+      });
+      document.addEventListener('pointercancel', () => { _decoDrag = null; });
+
+      function loadImageEl(src) {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = src;
+        });
+      }
+
+      // object-fit:cover와 동일하게 정사각형 캔버스를 꽉 채우도록 크롭해서 그림 - 편집기 미리보기의
+      // <img style="object-fit:cover">와 시각적으로 일치시키기 위함.
+      function drawCoverImage(ctx, img, w, h) {
+        const ir = img.width / img.height;
+        const cr = w / h;
+        let sx, sy, sw, sh;
+        if (ir > cr) { sh = img.height; sw = sh * cr; sx = (img.width - sw) / 2; sy = 0; }
+        else { sw = img.width; sh = sw / cr; sx = 0; sy = (img.height - sh) / 2; }
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+      }
+
+      window.saveDecoCreation = async function() {
+        const ds = state.ui.decoStudio;
+        if (!ds) return;
+        if (!state.user.isLoggedIn) {
+          showToast('로그인 후 저장할 수 있어요 🔐');
+          openLoginSheet('initial');
+          return;
+        }
+        if (Object.keys(ds.layers).length === 0) {
+          showToast('아이템을 1개 이상 꾸며주세요.');
+          return;
+        }
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = DECO_CANVAS_SIZE;
+          canvas.height = DECO_CANVAS_SIZE;
+          const ctx = canvas.getContext('2d');
+          const baseImg = await loadImageEl(ds.photo);
+          drawCoverImage(ctx, baseImg, DECO_CANVAS_SIZE, DECO_CANVAS_SIZE);
+
+          const layerEntries = [];
+          DECO_PARTS.forEach(p => {
+            const layer = ds.layers[p.key];
+            if (!layer) return;
+            const item = state.deco.items.find(i => i.id === layer.itemId);
+            if (!item) return;
+            layerEntries.push({ part: p.key, ...layer });
+            const box = DECO_CANVAS_SIZE * DECO_BOX_RATIO * layer.scale;
+            const px = DECO_CANVAS_SIZE * layer.x / 100;
+            const py = DECO_CANVAS_SIZE * layer.y / 100;
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.rotate(layer.rotation * Math.PI / 180);
+            ctx.font = `${box * 0.85}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(item.emoji, 0, 0);
+            ctx.restore();
+          });
+
+          const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+          if (!blob) throw new Error('이미지 생성에 실패했어요.');
+
+          const form = new FormData();
+          form.append('user_id', state.user.id);
+          form.append('category', ds.category);
+          form.append('layers', JSON.stringify(layerEntries));
+          form.append('photo', blob, 'deco.png');
+          const res = await fetch(`${API_BASE}/api/deco/save`, { method: 'POST', body: form });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || '저장에 실패했어요.');
+
+          showToast('저장 완료! 내 작품에서 확인해보세요 🎉');
+          state.ui.decoStudio = null;
+          await refreshDecoCreations();
+          saveState();
+          render();
+        } catch (err) {
+          showToast(err.message || '저장 중 오류가 발생했어요.');
+        }
+      };
+
+      function renderDecoLayerWrapper(part, layer, selected) {
+        const box = DECO_PREVIEW_SIZE * DECO_BOX_RATIO * layer.scale;
+        return `
+          <div id="deco-layer-${part}" style="position:absolute; left:${layer.x}%; top:${layer.y}%; width:${box}px; height:${box}px; transform:translate(-50%,-50%) rotate(${layer.rotation}deg); touch-action:none; z-index:${DECO_PARTS.findIndex(p => p.key === part)};" onpointerdown="startDecoLayerMove(event, '${part}')">
+            <span class="deco-emoji" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:${box * 0.85}px; pointer-events:none; user-select:none;">${layer.itemEmoji}</span>
+            ${selected ? `
+              <div style="position:absolute; inset:-2px; border:2px dashed var(--primary); border-radius:8px; pointer-events:none;"></div>
+              <span style="position:absolute; right:-11px; bottom:-11px; width:22px; height:22px; border-radius:50%; background:var(--primary); color:#FFF; display:flex; align-items:center; justify-content:center; font-size:11px; cursor:nwse-resize;" onpointerdown="startDecoLayerResize(event, '${part}')">⤡</span>
+              <span style="position:absolute; left:50%; top:-28px; transform:translateX(-50%); width:22px; height:22px; border-radius:50%; background:#333; color:#FFF; display:flex; align-items:center; justify-content:center; font-size:11px; cursor:grab;" onpointerdown="startDecoLayerRotate(event, '${part}')">🔄</span>
+            ` : ''}
+          </div>
+        `;
+      }
+
+      function renderDecoShopItem(item, ds) {
+        const owned = state.deco.ownedIds.includes(item.id);
+        const equipped = ds.layers[item.part] && ds.layers[item.part].itemId === item.id;
+        const rarityColor = RARITY_COLORS[item.rarity] || '#9CA3AF';
+        return `
+          <div style="border:2px solid ${equipped ? 'var(--primary)' : 'var(--border)'}; border-radius:14px; padding:8px 4px; text-align:center; background:#FFF; cursor:pointer;" onclick="handleDecoItemTap('${item.id}')">
+            <div style="font-size:24px;">${item.emoji}</div>
+            <div style="font-size:11px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(item.name)}</div>
+            <div style="font-size:9px; font-weight:900; color:${rarityColor};">${item.rarity}</div>
+            <div style="font-size:11px; font-weight:700; color:${equipped ? 'var(--primary)' : 'var(--text-sub)'};">${equipped ? '✓ 장착됨' : (owned ? '보유중' : `⭐${item.price}`)}</div>
+          </div>
+        `;
+      }
+
+      function renderDecoEditor() {
+        const ds = state.ui.decoStudio;
+        const category = DECO_CATEGORIES.find(c => c.key === ds.category) || DECO_CATEGORIES[0];
+        const itemsForPart = state.deco.items.filter(i => i.category === ds.category && i.part === ds.selectedPart);
+        return `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <button class="icon-btn" onclick="closeDecoStudio()">✕</button>
+            <div style="font-size:14px; font-weight:900;">${category.emoji} ${category.label} 꾸미기</div>
+            <span style="font-size:12px; font-weight:800; color:var(--primary);">⭐ ${state.user.points}</span>
+          </div>
+
+          <div id="deco-canvas" style="position:relative; width:${DECO_PREVIEW_SIZE}px; height:${DECO_PREVIEW_SIZE}px; margin:0 auto 10px; border-radius:16px; overflow:hidden; background:#EFEDE9;">
+            <img src="${ds.photo}" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover; pointer-events:none;" />
+            ${DECO_PARTS.map(p => {
+              const layer = ds.layers[p.key];
+              if (!layer) return '';
+              const item = state.deco.items.find(i => i.id === layer.itemId);
+              return renderDecoLayerWrapper(p.key, { ...layer, itemEmoji: item ? item.emoji : '❓' }, ds.selectedPart === p.key);
+            }).join('')}
+          </div>
+
+          <div style="display:flex; gap:6px; justify-content:center; margin-bottom:10px;">
+            <button class="icon-btn" style="width:auto; padding:0 12px; font-size:12px;" ${ds.history.length === 0 ? 'disabled' : ''} onclick="undoDecoLayer()">↩️ 되돌리기</button>
+            <button class="icon-btn" style="width:auto; padding:0 12px; font-size:12px;" onclick="resetDecoLayers()">🗑️ 초기화</button>
+            <button class="cta-btn" style="padding:0 12px; font-size:12px;" onclick="randomDecorate()">🎲 랜덤꾸미기 (⭐${DECO_RANDOM_COST})</button>
+          </div>
+
+          <div class="filter-scroll" style="margin-bottom:10px;">
+            ${DECO_PARTS.map(p => `
+              <div class="filter-chip ${ds.selectedPart === p.key ? 'active' : ''}" onclick="selectDecoPart('${p.key}')">
+                ${p.emoji} ${p.label}${ds.layers[p.key] ? ' ✓' : ''}
+              </div>
+            `).join('')}
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:14px;">
+            ${itemsForPart.map(item => renderDecoShopItem(item, ds)).join('')}
+          </div>
+
+          <button class="cta-btn" style="width:100%; padding:13px;" onclick="saveDecoCreation()">💾 완성! 저장하기</button>
+        `;
+      }
+
+      function renderDecoLanding() {
+        let html = `
+          <div style="background:#FFF; border-radius:18px; padding:16px; border:1px solid var(--border); margin-bottom:14px;">
+            <div style="font-size:15px; font-weight:900; margin-bottom:4px;">📸 사진 꾸미기</div>
+            <div style="font-size:12px; color:var(--text-sub); margin-bottom:12px;">풍경이나 음식 사진을 올리고 별사탕으로 스티커·프레임을 사서 꾸며보세요.</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+              ${DECO_CATEGORIES.map(c => `
+                <label class="cta-btn" style="padding:16px 8px; flex-direction:column; gap:4px; text-align:center; cursor:pointer;">
+                  <span style="font-size:26px;">${c.emoji}</span>
+                  <span style="font-size:12px;">${c.label} 꾸미기</span>
+                  <input type="file" accept="image/*" style="display:none;" onchange="handleDecoPhotoInput(event, '${c.key}')" />
+                </label>
+              `).join('')}
+            </div>
+          </div>
+        `;
+        if (state.deco.creations.length > 0) {
+          html += `<div style="font-size:13px; font-weight:900; margin-bottom:8px;">🖼️ 내 작품</div>`;
+          html += `<div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">`;
+          html += state.deco.creations.map(c => `
+            <div style="aspect-ratio:1; border-radius:12px; overflow:hidden; border:1px solid var(--border);">
+              <img src="${esc(resolveImageUrl(c.image_key))}" style="width:100%; height:100%; object-fit:cover;" />
+            </div>
+          `).join('');
+          html += `</div>`;
+        }
+        return html;
+      }
+
+      // ==========================================
       // 3. Follow Route Overlay & GPS Check-in
       // ==========================================
       window.startFollowRoute = function(routeId) {
@@ -2209,6 +2673,10 @@
       // and whether we've pushed a history entry for "some overlay is open" (mobile back-button).
       let _lastOpenSheetKey = null;
       let _overlayHistoryPushed = false;
+
+      // In-progress 사진 꾸미기 layer drag/resize/rotate (not part of `state` - purely transient
+      // pointer-tracking; see the pointermove/pointerup listeners near the deco studio functions).
+      let _decoDrag = null;
 
       window.openRouteChat = function(routeId) {
         state.ui.chatSheet = { routeId };
@@ -3254,6 +3722,8 @@
               </div>
             </div>
           `;
+        } else if (state.ui.tab === 'deco') {
+          html += state.ui.decoStudio ? renderDecoEditor() : renderDecoLanding();
         }
 
         html += `</main>`;
@@ -3268,6 +3738,10 @@
             <div class="nav-item ${state.ui.tab === 'myRoutes' ? 'active' : ''}" onclick="setTab('myRoutes')">
               <span class="icon">📁</span>
               <span>마이루트</span>
+            </div>
+            <div class="nav-item ${state.ui.tab === 'deco' ? 'active' : ''}" onclick="setTab('deco')">
+              <span class="icon">🎨</span>
+              <span>꾸미기</span>
             </div>
             <div class="nav-item ${state.ui.tab === 'growth' ? 'active' : ''}" onclick="setTab('growth')">
               <span class="icon">🎁</span>
