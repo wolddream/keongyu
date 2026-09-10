@@ -1881,13 +1881,16 @@
       }
 
       const STOP_CATEGORY_PRESETS = [
-        { type: 'cafe', label: '카페', emoji: '☕' },
-        { type: 'bakery', label: '베이커리', emoji: '🥐' },
-        { type: 'restaurant', label: '맛집', emoji: '🍽️' },
-        { type: 'convenience', label: '편의점', emoji: '🏪' },
-        { type: 'attraction', label: '관광지', emoji: '📸' },
-        { type: 'nature', label: '자연/공원', emoji: '🌳' }
+        { type: 'food', label: '음식', emoji: '🍽️' },
+        { type: 'coffee', label: '커피', emoji: '☕' },
+        { type: 'entertainment', label: '오락', emoji: '🎮' },
+        { type: 'nature', label: '자연', emoji: '🌳' },
+        { type: 'life', label: '생활', emoji: '🏪' }
       ];
+
+      // 예전 카테고리 체계에서 새 5종 체계로의 매핑 - openStopEditor()가 기존 경유지를 수정 모드로
+      // 열 때만 쓰인다 (아래 참고).
+      const LEGACY_STOP_CATEGORY_MAP = { cafe: 'coffee', bakery: 'food', restaurant: 'food', convenience: 'life', attraction: 'entertainment' };
 
       const TRANSIT_PRESETS = [
         { type: 'walk', label: '도보', emoji: '🚶', defaultText: '도보 7분 (450m)' },
@@ -2019,8 +2022,8 @@
       function newStopDraft() {
         return {
           editingIndex: null,
-          category: 'cafe',
-          emoji: '☕',
+          category: 'food',
+          emoji: '🍽️',
           name: '',
           subtitle: '',
           arrivalTime: '',
@@ -2090,8 +2093,11 @@
           state.ui.stopEditor = {
             ...newStopDraft(),
             editingIndex: index,
-            category: step.category || 'cafe',
-            emoji: step.emoji || '☕',
+            // 예전 카테고리 체계('cafe'/'bakery'/'restaurant'/'convenience'/'attraction')로 만들어진
+            // 기존 경유지를 수정할 때, 그 영문 키가 새 프리셋 목록에 없어서 "기타" 커스텀 입력창에
+            // 그대로 노출되는 걸 막기 위한 매핑 - LEGACY_STOP_CATEGORY_MAP 참고.
+            category: LEGACY_STOP_CATEGORY_MAP[step.category] || step.category || 'food',
+            emoji: step.emoji || '🍽️',
             name: step.name || '',
             subtitle: step.subtitle || '',
             arrivalTime: step.arrivalTime || '',
@@ -2121,6 +2127,31 @@
         state.ui.stopEditor.category = type;
         state.ui.stopEditor.emoji = preset.emoji;
         render();
+      };
+
+      // "기타" 칩 - 테마의 selectCustomRouteBuilderPurpose()와 같은 패턴: 정해진 카테고리가 아니면
+      // (STOP_CATEGORY_PRESETS에 없는 값이면) 커스텀 모드로 간주해 입력창을 보여준다.
+      window.selectCustomStopCategory = function() {
+        const editor = state.ui.stopEditor;
+        if (!editor) return;
+        if (STOP_CATEGORY_PRESETS.some(p => p.type === editor.category)) {
+          editor.category = '';
+          editor.emoji = '📍';
+        }
+        render();
+      };
+
+      // 커스텀 카테고리 입력 - handleCustomPurposeInput()과 동일한 방식: 금칙어가 걸리면 입력창을
+      // 이전 값으로 되돌리고 state에는 반영하지 않는다.
+      window.handleCustomStopCategoryInput = function(el) {
+        const editor = state.ui.stopEditor;
+        if (!editor) return;
+        if (containsBannedWord(el.value)) {
+          el.value = editor.category;
+          showToast('부적절한 단어는 카테고리 이름에 사용할 수 없어요.');
+          return;
+        }
+        editor.category = el.value;
       };
 
       window.selectStopTransit = function(type) {
@@ -2295,6 +2326,18 @@
         if (!name) {
           showToast('장소명을 입력해주세요.');
           return;
+        }
+        // "기타" 커스텀 카테고리 - handleCustomStopCategoryInput()이 타이핑 중 이미 걸러내지만, 붙여넣기
+        // 등으로 oninput을 안 거쳤을 가능성에 대비해 저장 직전에도 한 번 더 확인한다.
+        if (!STOP_CATEGORY_PRESETS.some(p => p.type === editor.category)) {
+          if (!editor.category.trim()) {
+            showToast('카테고리 이름을 입력해주세요.');
+            return;
+          }
+          if (containsBannedWord(editor.category)) {
+            showToast('카테고리 이름에 부적절한 단어가 포함되어 있어요.');
+            return;
+          }
         }
 
         const isFirst = editor.editingIndex === null ? builder.steps.length === 0 : editor.editingIndex === 0;
@@ -4966,7 +5009,14 @@
                         <span style="font-size:11px; font-weight:700;">${p.label}</span>
                       </div>
                     `).join('')}
+                    <div class="radio-item ${!STOP_CATEGORY_PRESETS.some(p => p.type === se.category) ? 'selected' : ''}" style="margin-bottom:0; padding:8px; flex-direction:column; gap:2px; justify-content:center;" onclick="selectCustomStopCategory()">
+                      <span style="font-size:17px;">✏️</span>
+                      <span style="font-size:11px; font-weight:700;">기타</span>
+                    </div>
                   </div>
+                  ${!STOP_CATEGORY_PRESETS.some(p => p.type === se.category) ? `
+                    <input type="text" placeholder="카테고리 이름을 입력해주세요 (예: 반려동물용품점)" value="${esc(se.category)}" maxlength="12" oninput="handleCustomStopCategoryInput(this)" style="margin-top:8px; width:100%; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
+                  ` : ''}
                 </div>
 
                 <input type="text" id="stop-form-name" placeholder="장소명 *" value="${esc(se.name)}" oninput="state.ui.stopEditor.name=this.value" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:14px; font-weight:700;" />
