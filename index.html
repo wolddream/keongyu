@@ -5240,11 +5240,6 @@
                 <input type="text" id="stop-form-name" placeholder="장소명 *" value="${esc(se.name)}" oninput="filteredInput(this, 'ui.stopEditor.name')" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:14px; font-weight:700;" />
                 <input type="text" id="stop-form-subtitle" placeholder="한 줄 소개" value="${esc(se.subtitle)}" oninput="filteredInput(this, 'ui.stopEditor.subtitle')" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
 
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-                  <input type="text" id="stop-form-time" placeholder="도착 예정 시간" value="${esc(se.arrivalTime)}" oninput="filteredInput(this, 'ui.stopEditor.arrivalTime')" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
-                  <input type="text" id="stop-form-duration" placeholder="체류 시간" value="${esc(se.stayDuration)}" oninput="filteredInput(this, 'ui.stopEditor.stayDuration')" style="border:1px solid var(--border); border-radius:12px; padding:9px 10px; font-size:12px; min-width:0;" />
-                </div>
-
                 ${!isFirst ? `
                   <div style="padding:10px; border-radius:14px; background:#F5F3FF; border:1px solid var(--border);">
                     <div style="font-size:11px; font-weight:800; color:var(--primary); margin-bottom:6px;">🧭 이전 경유지에서의 이동방법</div>
@@ -5262,31 +5257,32 @@
                 <div>
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                     <div style="font-size:12px; font-weight:800; color:var(--text-sub);">주소</div>
-                    ${se.gps ? `<span style="font-size:11px; font-weight:800; color:#2DD4A0;">✓ GPS 연동됨</span>` : ''}
+                    <div style="display:flex; align-items:center; gap:6px;">
+                      ${se.gps ? `<span style="font-size:11px; font-weight:800; color:#2DD4A0;">✓ GPS 연동됨</span>` : ''}
+                      <button class="icon-btn" style="width:26px; height:26px; font-size:12px; background:${se.gps ? '#2DD4A0' : '#FFF'}; color:${se.gps ? '#FFF' : 'var(--text)'}; border:1px solid var(--border);" ${se.gpsLoading ? 'disabled' : ''} onclick="getStopEditorGps()" title="${se.gps ? 'GPS 갱신' : 'GPS 위치 조회'}">
+                        ${se.gpsLoading ? '⏳' : '📍'}
+                      </button>
+                    </div>
                   </div>
                   <input type="text" id="stop-form-address" placeholder="예: 서울 성동구 서울숲길 15" value="${esc(se.address)}" oninput="filteredInput(this, 'ui.stopEditor.address')" style="width:100%; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
+                  ${se.gps ? `
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 10px; margin-top:6px; border-radius:10px; background:#E9FBF3; font-size:11px; color:#0E9F6E;">
+                      <span>📍 ${esc(se.gps.formattedText)}${se.gps.accuracy ? ` (오차 ±${se.gps.accuracy}m)` : ''}</span>
+                      <span style="cursor:pointer; font-weight:800;" onclick="clearStopEditorGps()">✕</span>
+                    </div>
+                  ` : ''}
+                  ${se.gpsError ? `<div style="font-size:11px; color:#E4572E; margin-top:4px;">${esc(se.gpsError)}</div>` : ''}
                 </div>
 
                 <div style="padding:12px; border-radius:16px; background:#F8F8F6; border:1px solid var(--border); display:flex; flex-direction:column; gap:8px;">
-                  <div style="font-size:12px; font-weight:900;">📷 경유지 사진 (${se.photos.length}/${MAX_STOP_PHOTOS}) &amp; GPS 위치</div>
-                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-                    <button class="cta-btn" style="padding:9px; font-size:12px; opacity:${se.photos.length >= MAX_STOP_PHOTOS ? '0.5' : '1'};" ${se.photos.length >= MAX_STOP_PHOTOS ? 'disabled' : ''} onclick="startStepCamera()">📸 사진 촬영</button>
-                    <button class="cta-btn" style="padding:9px; font-size:12px; background:${se.gps ? '#2DD4A0' : '#FFF'}; color:${se.gps ? '#FFF' : 'var(--text)'}; border:1px solid var(--border);" ${se.gpsLoading ? 'disabled' : ''} onclick="getStopEditorGps()">
-                      ${se.gpsLoading ? '⏳ 위치 탐색중' : (se.gps ? '✓ GPS 갱신' : '📍 GPS 위치 조회')}
-                    </button>
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-size:12px; font-weight:900;">📷 경유지 사진 (${se.photos.length}/${MAX_STOP_PHOTOS})</div>
+                    <button class="icon-btn" style="width:28px; height:28px; font-size:13px; opacity:${se.photos.length >= MAX_STOP_PHOTOS ? '0.5' : '1'};" ${se.photos.length >= MAX_STOP_PHOTOS ? 'disabled' : ''} onclick="startStepCamera()" title="사진 촬영">📸</button>
                   </div>
                   <label class="cta-btn" style="padding:9px; font-size:12px; background:#FFF; color:var(--text); border:1px solid var(--border); text-align:center; cursor:pointer; opacity:${se.photos.length >= MAX_STOP_PHOTOS ? '0.5' : '1'}; pointer-events:${se.photos.length >= MAX_STOP_PHOTOS ? 'none' : 'auto'};">
                     📁 파일 업로드
                     <input type="file" accept="image/*" multiple style="display:none;" onchange="handleStopFileInput(event)" ${se.photos.length >= MAX_STOP_PHOTOS ? 'disabled' : ''} />
                   </label>
-
-                  ${se.gps ? `
-                    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-radius:10px; background:#E9FBF3; font-size:11px; color:#0E9F6E;">
-                      <span>📍 ${esc(se.gps.formattedText)}${se.gps.accuracy ? ` (오차 ±${se.gps.accuracy}m)` : ''}</span>
-                      <span style="cursor:pointer; font-weight:800;" onclick="clearStopEditorGps()">✕</span>
-                    </div>
-                  ` : ''}
-                  ${se.gpsError ? `<div style="font-size:11px; color:#E4572E;">${esc(se.gpsError)}</div>` : ''}
 
                   ${se.cameraOpen ? `
                     <div style="position:relative; border-radius:14px; overflow:hidden; background:#000; border:2px solid var(--primary);">
