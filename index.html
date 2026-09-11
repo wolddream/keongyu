@@ -139,6 +139,26 @@
       .filter-chip.active { background: var(--text); color: #FFF; border-color: var(--text); }
       .filter-chip.sub-chip.active { background: var(--primary); color: #FFF; border-color: var(--primary); }
 
+      /* 꾸미기(스킨 스튜디오) 파츠 탭 - 예전엔 모든 탭이 통짜 회색/보라 박스라 12개가 나란히
+         있으면 답답해 보였다. 얇은 테두리의 흰 칩 기본형 + 활성 탭만 은은한 그림자로 떠 보이게
+         하고, 장착된 파츠는 코너에 작은 점 하나로만 표시한다(라벨에 "✓" 텍스트를 덧붙이는
+         대신) - 12개가 한 줄에 있어도 덜 산만하다. */
+      .skin-part-tab {
+        position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
+        gap: 3px; padding: 9px 15px 7px; border-radius: 16px; cursor: pointer;
+        background: #FFF; border: 1.5px solid var(--border); transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+      }
+      .skin-part-tab-emoji { font-size: 18px; line-height: 1; }
+      .skin-part-tab-label { font-size: 10px; font-weight: 800; white-space: nowrap; color: var(--text-sub); }
+      .skin-part-tab.active {
+        background: var(--primary); border-color: var(--primary); box-shadow: 0 3px 10px rgba(0,0,0,0.14);
+      }
+      .skin-part-tab.active .skin-part-tab-label { color: #FFF; }
+      .skin-part-tab-dot {
+        position: absolute; top: 5px; right: 7px; width: 7px; height: 7px; border-radius: 50%;
+        background: var(--mint); border: 1.5px solid #FFF;
+      }
+
       .route-card {
         background: var(--card); border-radius: 18px; padding: 16px; border: 1px solid var(--border);
         box-shadow: 0 2px 8px rgba(0,0,0,0.03); display: flex; flex-direction: column; gap: 10px;
@@ -1340,7 +1360,8 @@
         if (state.routeSkinPresets === undefined) state.routeSkinPresets = [];
         // skinTab 기본값은 리터럴로 직접 씀 - normalizeState()는 ROUTE_SKIN_PARTS가 선언되기
         // 전(스크립트 앞쪽)에 실행되므로 여기서 ROUTE_SKIN_PARTS[0].key를 참조하면 TDZ 에러가 난다.
-        if (state.skinStudioDraft === undefined) state.skinStudioDraft = { skin: {}, skinTab: 'card_bg' };
+        if (state.skinStudioDraft === undefined) state.skinStudioDraft = { skin: {}, skinTab: 'card_bg', previewItemId: null };
+        if (state.skinStudioDraft.previewItemId === undefined) state.skinStudioDraft.previewItemId = null; // 미보유 아이템 탭 -> 구매 전 미리보기
         if (state.ui.skinPresetNameDraft === undefined) state.ui.skinPresetNameDraft = null;
         if (state.challenge.todayCheck === undefined) state.challenge.todayCheck = null;
         if (state.challenge.completed === undefined) state.challenge.completed = false;
@@ -2625,13 +2646,31 @@
         render();
       };
 
+      // 미보유 아이템은 탭해도 바로 안 사고 미리보기만 한다(state.skinStudioDraft.previewItemId) -
+      // 실제 구매는 미리보기 카드 아래 뜨는 "⭐N개로 구매하기" 버튼(confirmSkinPreviewPurchase)을
+      // 눌러야 이뤄진다. 이미 보유/장착한 아이템은 공짜라 기존처럼 탭 한 번으로 즉시 전환된다.
       window.handleRouteSkinItemTap = function(itemId) {
         const item = findRouteSkinItem(itemId);
         if (!item) return;
-        const equipped = state.skinStudioDraft.skin[item.part] === item.id;
+        const draft = state.skinStudioDraft;
+        const equipped = draft.skin[item.part] === item.id;
         if (equipped) { unequipRouteSkinPart(item.part); return; }
-        if (state.routeSkinShop.ownedIds.includes(item.id)) { equipRouteSkinItem(item.id); return; }
-        buyRouteSkinItem(item.id);
+        if (state.routeSkinShop.ownedIds.includes(item.id)) { draft.previewItemId = null; equipRouteSkinItem(item.id); return; }
+        // 같은 미리보기 아이템을 다시 탭하면 취소, 다른 아이템을 탭하면 미리보기를 교체한다.
+        draft.previewItemId = draft.previewItemId === item.id ? null : item.id;
+        render();
+      };
+
+      window.cancelSkinPreview = function() {
+        state.skinStudioDraft.previewItemId = null;
+        render();
+      };
+
+      window.confirmSkinPreviewPurchase = function() {
+        const itemId = state.skinStudioDraft.previewItemId;
+        if (!itemId) return;
+        state.skinStudioDraft.previewItemId = null;
+        buyRouteSkinItem(itemId);
       };
 
       window.buyRouteSkinItem = async function(itemId) {
@@ -2653,11 +2692,18 @@
       function renderRouteSkinShopItem(item, rb) {
         const owned = state.routeSkinShop.ownedIds.includes(item.id);
         const equipped = rb.skin[item.part] === item.id;
+        const previewing = !owned && rb.previewItemId === item.id;
         const rarityColor = RARITY_COLORS[item.rarity] || '#9CA3AF';
         // 움직이는 이펙트가 있는 아이템은 등급 색 대신(장착 전 기준) ROUTE_SKIN_DYNAMIC_COLOR
         // 테두리 + 코너에 ✨ 표시를 얹어서, 이름을 안 읽어도 "이건 움직인다"가 바로 보이게 한다.
         const dynamic = isRouteSkinItemDynamic(item);
-        const borderColor = equipped ? 'var(--primary)' : (dynamic ? ROUTE_SKIN_DYNAMIC_COLOR : rarityColor);
+        const borderColor = equipped ? 'var(--primary)' : previewing ? '#FFA500' : (dynamic ? ROUTE_SKIN_DYNAMIC_COLOR : rarityColor);
+        const borderStyle = previewing ? 'dashed' : 'solid';
+        let statusLabel;
+        if (equipped) statusLabel = `<span style="color:var(--primary);">✓ 적용됨</span>`;
+        else if (previewing) statusLabel = `<span style="color:#FFA500;">👁 미리보기 중</span>`;
+        else if (owned) statusLabel = `<span style="color:var(--text-sub);">보유중</span>`;
+        else statusLabel = `<span style="color:var(--text-sub);">⭐${item.price}</span>`;
         // min-width:0 + overflow:hidden on the grid item itself (not just the inner name text) -
         // some item names are long unbroken strings (e.g. "kyungyu의 찢어진 편지지 프레임" under
         // frame), and a CSS grid item's automatic minimum width defaults to its content's min-content
@@ -2665,11 +2711,11 @@
         // name forced its whole grid row (and with it the page) wider than the app frame instead of
         // the name just ellipsis-truncating inside its 1fr column.
         return `
-          <div style="position:relative; min-width:0; overflow:hidden; border:2px solid ${borderColor}; border-radius:14px; padding:10px 4px; text-align:center; background:#FFF; cursor:pointer;" onclick="handleRouteSkinItemTap('${item.id}')" title="${dynamic ? '움직이는 이펙트' : ''}">
+          <div style="position:relative; min-width:0; overflow:hidden; border:2px ${borderStyle} ${borderColor}; border-radius:14px; padding:10px 4px; text-align:center; background:#FFF; cursor:pointer;" onclick="handleRouteSkinItemTap('${item.id}')" title="${dynamic ? '움직이는 이펙트' : ''}">
             ${dynamic ? `<span style="position:absolute; top:2px; right:4px; font-size:11px;">✨</span>` : ''}
             <div style="font-size:30px; margin-bottom:4px;">${item.emoji}</div>
             <div style="font-size:11px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(item.name)}</div>
-            <div style="font-size:10px; font-weight:700; color:${equipped ? 'var(--primary)' : 'var(--text-sub)'};">${equipped ? '✓ 적용됨' : (owned ? '보유중' : `⭐${item.price}`)}</div>
+            <div style="font-size:10px; font-weight:700;">${statusLabel}</div>
           </div>
         `;
       }
@@ -2773,7 +2819,11 @@
       // 이름을 드롭다운으로 골라 적용만 한다(직접 아이템을 고르지 않음 - applyRouteSkinPreset 참고).
       function renderSkinStudio() {
         const draft = state.skinStudioDraft;
-        const previewData = { title: '나의 트레일 경로', purpose: ROUTE_PURPOSES[0], skin: draft.skin };
+        // 아직 안 산 아이템을 탭하면 실제 skin은 그대로 두고 미리보기에만 얹어서 보여준다 -
+        // 진짜 장착/구매는 confirmSkinPreviewPurchase()를 눌러야 확정된다.
+        const previewItem = findRouteSkinItem(draft.previewItemId);
+        const previewSkin = previewItem ? { ...draft.skin, [previewItem.part]: previewItem.id } : draft.skin;
+        const previewData = { title: '나의 트레일 경로', purpose: ROUTE_PURPOSES[0], skin: previewSkin };
         const currentPart = ROUTE_SKIN_PARTS.find(p => p.key === draft.skinTab) || ROUTE_SKIN_PARTS[0];
         const itemsForPart = state.routeSkinShop.items.filter(i => i.part === draft.skinTab);
 
@@ -2781,13 +2831,24 @@
           <div style="font-size:18px; font-weight:900; margin-bottom:14px;">🎨 경로 커스텀 상점</div>
 
           <div style="font-size:13px; font-weight:800; color:var(--text-sub); margin-bottom:8px;">내 경로 미리보기</div>
-          <div style="margin-bottom:16px;">${renderRouteSkinPreviewCard(previewData)}</div>
+          <div style="margin-bottom:${previewItem ? '10px' : '16px'};">${renderRouteSkinPreviewCard(previewData)}</div>
+          ${previewItem ? `
+            <div style="display:flex; align-items:center; gap:8px; padding:10px 12px; margin-bottom:16px; border-radius:14px; background:#FFF7EA; border:1px dashed #FFA500;">
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:12px; font-weight:800; color:#B8860B;">👁 "${esc(previewItem.name)}" 미리보기 중</div>
+                <div style="font-size:11px; color:var(--text-sub);">구매해야 실제로 적용돼요</div>
+              </div>
+              <button class="btn-secondary" style="padding:7px 10px; font-size:11px; flex-shrink:0;" onclick="cancelSkinPreview()">취소</button>
+              <button class="cta-btn" style="padding:8px 12px; font-size:12px; flex-shrink:0; background:linear-gradient(135deg,#FFD700,#FFA500); color:#4A3300;" onclick="confirmSkinPreviewPurchase()">⭐${previewItem.price}개로 구매하기</button>
+            </div>
+          ` : ''}
 
-          <div class="skin-part-tabs" style="display:flex; gap:8px; overflow-x:auto; padding-bottom:2px; margin-bottom:14px;">
+          <div class="skin-part-tabs" style="display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; margin-bottom:14px;">
             ${ROUTE_SKIN_PARTS.map(p => `
-              <div onclick="selectRouteSkinTab('${p.key}')" style="flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:2px; padding:8px 14px; border-radius:14px; cursor:pointer; background:${draft.skinTab === p.key ? 'var(--primary)' : '#F5F5F0'};">
-                <span style="font-size:18px;">${p.emoji}</span>
-                <span style="font-size:10px; font-weight:800; white-space:nowrap; color:${draft.skinTab === p.key ? '#FFF' : 'var(--text)'};">${p.label}${draft.skin[p.key] ? ' ✓' : ''}</span>
+              <div class="skin-part-tab ${draft.skinTab === p.key ? 'active' : ''}" onclick="selectRouteSkinTab('${p.key}')">
+                ${draft.skin[p.key] ? `<span class="skin-part-tab-dot"></span>` : ''}
+                <span class="skin-part-tab-emoji">${p.emoji}</span>
+                <span class="skin-part-tab-label">${p.label}</span>
               </div>
             `).join('')}
           </div>
