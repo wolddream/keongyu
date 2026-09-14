@@ -2247,6 +2247,7 @@
           gpsError: null,
           nearbyPlaces: [],
           nearbyLoading: false,
+          searchQuery: '',
           searchResults: [],
           searchLoading: false,
           cameraOpen: false,
@@ -2456,10 +2457,30 @@
 
       // 현재 그 자리에 없어도(미리 계획할 때) 이름으로 검색해서 경유지를 고를 수 있게 한다 - GPS
       // 버튼(근처 찾기)의 반대 방향 짝. 입력마다 부르지 않고 350ms 디바운스로 묶는다.
+      //
+      // se.searchQuery에 상태를 반드시 반영해 <input value="...">로 되먹여야 한다 - render()가
+      // #root를 통째로 재생성해 이 <input> 자체를 매번 새로 만들기 때문에, 상태에 없는 값은
+      // 다음 render()에서 그냥 사라진다(타이핑한 게 지워지는 것처럼 보이는 버그였음). IME(한글)
+      // 조합 중 render()가 조합을 끊는 문제는 기존 search-input과 같은 패턴(dataset.composing +
+      // document 위임 compositionstart/end, 아래 참고)으로 막는다.
       let _stopSearchDebounce = null;
-      window.handleStopPlaceSearch = function(query) {
+      window.handleStopPlaceSearch = function(e) {
         const editor = state.ui.stopEditor;
         if (!editor) return;
+        editor.searchQuery = e.target.value;
+        if (e.target.dataset.composing === 'true') return;
+        scheduleStopPlaceSearch(editor, e.target.value);
+      };
+
+      window.onStopSearchCompositionEnd = function(e) {
+        e.target.dataset.composing = 'false';
+        const editor = state.ui.stopEditor;
+        if (!editor) return;
+        editor.searchQuery = e.target.value;
+        scheduleStopPlaceSearch(editor, e.target.value);
+      };
+
+      function scheduleStopPlaceSearch(editor, query) {
         clearTimeout(_stopSearchDebounce);
         editor.searchResults = [];
         if (!query.trim()) { editor.searchLoading = false; render(); return; }
@@ -2480,7 +2501,7 @@
               render();
             });
         }, 350);
-      };
+      }
 
       // 근처 검색/이름 검색 결과 카드 한 칸 - 두 목록이 같은 모양(이름/주소/카테고리이모지 + 선택적
       // 거리)을 쓰므로 렌더링을 공유한다. handlerName은 클릭 시 부를 전역 함수 이름.
@@ -2557,8 +2578,7 @@
         if (!editor || !editor.searchResults || !editor.searchResults[index]) return;
         applyPlaceToStopEditor(editor, editor.searchResults[index]);
         editor.searchResults = [];
-        const searchInput = document.getElementById('stop-search-input');
-        if (searchInput) searchInput.value = '';
+        editor.searchQuery = '';
         render();
       };
 
@@ -5552,7 +5572,7 @@
 
                 <div>
                   <div style="font-size:11px; font-weight:800; color:var(--text-sub); margin-bottom:6px;">🔍 이름으로 검색해서 채우기 (그 자리에 없어도 OK)</div>
-                  <input type="text" id="stop-search-input" placeholder="예: 스타벅스 성수점" oninput="handleStopPlaceSearch(this.value)" style="width:100%; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
+                  <input type="text" id="stop-search-input" placeholder="예: 스타벅스 성수점" value="${esc(se.searchQuery || '')}" oninput="handleStopPlaceSearch(event)" style="width:100%; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
                   ${se.searchLoading ? `<div style="font-size:11px; color:var(--text-sub); margin-top:6px;">검색 중...</div>` : ''}
                   ${(se.searchResults && se.searchResults.length && !se.searchLoading) ? `
                     <div style="margin-top:6px; display:flex; flex-direction:column; gap:5px;">
@@ -6193,6 +6213,7 @@
         // so it just needs dataset.composing set/cleared for render()'s generic top-of-function
         // guard to skip mid-composition rebuilds triggered by the chat poll timer.
         if (e.target && e.target.id === 'chat-input') e.target.dataset.composing = 'true';
+        if (e.target && e.target.id === 'stop-search-input') e.target.dataset.composing = 'true';
       });
       document.addEventListener('compositionend', e => {
         if (e.target && e.target.id === 'search-input') onSearchCompositionEnd(e);
@@ -6200,6 +6221,7 @@
           e.target.dataset.composing = 'false';
           state.ui.chatDraft = e.target.value;
         }
+        if (e.target && e.target.id === 'stop-search-input') onStopSearchCompositionEnd(e);
       });
 
       // Closes whichever sheet/overlay is currently on top, same cascade Esc and the mobile
