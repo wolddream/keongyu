@@ -5567,9 +5567,6 @@
                   ` : ''}
                 </div>
 
-                <input type="text" id="stop-form-name" placeholder="장소명 *" value="${esc(se.name)}" oninput="filteredInput(this, 'ui.stopEditor.name')" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:14px; font-weight:700;" />
-                <input type="text" id="stop-form-subtitle" placeholder="한 줄 소개" value="${esc(se.subtitle)}" oninput="filteredInput(this, 'ui.stopEditor.subtitle')" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
-
                 <div>
                   <div style="font-size:11px; font-weight:800; color:var(--text-sub); margin-bottom:6px;">🔍 이름으로 검색해서 채우기 (그 자리에 없어도 OK)</div>
                   <input type="text" id="stop-search-input" placeholder="예: 스타벅스 성수점" value="${esc(se.searchQuery || '')}" oninput="handleStopPlaceSearch(event)" style="width:100%; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
@@ -5580,6 +5577,9 @@
                     </div>
                   ` : ''}
                 </div>
+
+                <input type="text" id="stop-form-name" placeholder="장소명 *" value="${esc(se.name)}" oninput="filteredInput(this, 'ui.stopEditor.name')" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:14px; font-weight:700;" />
+                <input type="text" id="stop-form-subtitle" placeholder="한 줄 소개" value="${esc(se.subtitle)}" oninput="filteredInput(this, 'ui.stopEditor.subtitle')" style="border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;" />
 
                 ${!isFirst ? `
                   <div style="padding:10px; border-radius:14px; background:#F5F3FF; border:1px solid var(--border);">
