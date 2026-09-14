@@ -34,6 +34,19 @@ interface KakaoPlaceDoc {
 	distance: string;
 }
 
+function docToPlace(d: KakaoPlaceDoc) {
+	const stopType = CATEGORY_TO_STOP_TYPE[d.category_group_code] || "life";
+	return {
+		name: d.place_name,
+		address: d.road_address_name || d.address_name,
+		lat: Number(d.y),
+		lng: Number(d.x),
+		distance: d.distance ? Math.round(Number(d.distance)) : null,
+		category: stopType,
+		emoji: STOP_TYPE_EMOJI[stopType],
+	};
+}
+
 export async function handleGetNearbyPlaces(request: Request, env: Env): Promise<Response> {
 	const url = new URL(request.url);
 	const lat = Number(url.searchParams.get("lat"));
@@ -62,20 +75,26 @@ export async function handleGetNearbyPlaces(request: Request, env: Env): Promise
 
 	const places = perCategory
 		.flat()
-		.map((d) => {
-			const stopType = CATEGORY_TO_STOP_TYPE[d.category_group_code] || "life";
-			return {
-				name: d.place_name,
-				address: d.road_address_name || d.address_name,
-				lat: Number(d.y),
-				lng: Number(d.x),
-				distance: Math.round(Number(d.distance)),
-				category: stopType,
-				emoji: STOP_TYPE_EMOJI[stopType],
-			};
-		})
-		.sort((a, b) => a.distance - b.distance)
+		.map(docToPlace)
+		.sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0))
 		.slice(0, 8);
 
+	return json({ places });
+}
+
+// 지금 그 자리에 없어도(미리 계획할 때) 이름으로 검색해서 경유지를 고를 수 있게 하는, GPS 버튼과
+// 짝을 이루는 기능 - 텍스트로 치는 건 장소명 하나뿐이고 나머지(주소/좌표/카테고리)는 골라서 채운다.
+export async function handleSearchPlaces(request: Request, env: Env): Promise<Response> {
+	const url = new URL(request.url);
+	const query = (url.searchParams.get("q") || "").trim();
+	if (!query) return json({ places: [] });
+
+	const params = new URLSearchParams({ query, size: "8" });
+	const res = await fetch(`https://dapi.kakao.com/v2/local/search/keyword.json?${params}`, {
+		headers: { Authorization: `KakaoAK ${env.KAKAO_REST_API_KEY}` },
+	});
+	if (!res.ok) return json({ places: [] });
+	const data = (await res.json()) as { documents?: KakaoPlaceDoc[] };
+	const places = (data.documents || []).map(docToPlace);
 	return json({ places });
 }
