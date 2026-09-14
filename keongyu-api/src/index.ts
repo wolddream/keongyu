@@ -39,6 +39,8 @@
  *   GET  /api/admin/verify                 -> checks X-ADMIN-TOKEN header against env.ADMIN_TOKEN
  *   GET  /api/admin/reports?status=        -> list reports (X-ADMIN-TOKEN required; status defaults to "open")
  *   PATCH /api/admin/reports/:id           -> mark a report resolved + admin_logs entry (X-ADMIN-TOKEN required)
+ *   POST /api/sync-errors                  -> client beacon: records a failed fire-and-forget sync (steps PUT, etc.)
+ *   GET  /api/admin/sync-errors            -> list recent sync failures (X-ADMIN-TOKEN required)
  *
  * Bindings (wrangler.jsonc): DB (D1), IMAGES (R2)
  * Secrets (wrangler secret put): TURNSTILE_SECRET_KEY, KAKAO_REST_API_KEY, (optional) KAKAO_CLIENT_SECRET,
@@ -61,6 +63,7 @@ import { handleVerifyPayment } from "./points";
 import { handleGetDecoItems, handleGetDecoInventory, handleBuyDecoItem, handleRandomDeco, handleSaveDecoCreation, handleGetDecoCreations } from "./deco";
 import { handleGetRouteSkinItems, handleGetRouteSkinInventory, handleBuyRouteSkinItem } from "./routeSkin";
 import { handleSendGift, handleGetGiftbox, handleMarkGiftboxRead } from "./candy";
+import { handleLogSyncError, handleGetSyncErrors } from "./syncErrors";
 
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
@@ -201,6 +204,12 @@ export default {
 			// /api/admin/reports/:id
 			if (segments[0] === "api" && segments[1] === "admin" && segments[2] === "reports" && segments.length === 4 && request.method === "PATCH") {
 				return cors(await handleResolveReport(request, env, segments[3]));
+			}
+			if (url.pathname === "/api/sync-errors" && request.method === "POST") {
+				return cors(await handleLogSyncError(request, env));
+			}
+			if (url.pathname === "/api/admin/sync-errors" && request.method === "GET") {
+				return cors(await handleGetSyncErrors(request, env));
 			}
 		} catch (err) {
 			return cors(json({ error: (err as Error).message }, 500));

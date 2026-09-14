@@ -887,35 +887,63 @@
       // next time the app opens, syncRoutesFromServer() below would otherwise trust that stale
       // server list and overwrite the correct local one, which is what made added waypoints
       // "disappear after some time" even for a single user on a single device.
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      // Best-effort beacon so a sync failure leaves a trace we can actually go check (D1
+      // sync_errors table via /api/admin/sync-errors) instead of only a console.warn that's
+      // invisible on a user's phone. This call itself is fire-and-forget - failing to log a
+      // failure isn't worth chasing further.
+      function logSyncErrorToServer(route, action, phase, detail) {
+        apiJson('/api/sync-errors', 'POST', {
+          route_id: route.id,
+          user_id: state.user.id,
+          action,
+          phase,
+          detail: String(detail == null ? '' : detail).slice(0, 500),
+        });
+      }
+
       const stepsSyncQueue = new Map();
       function syncStepsToServer(route, action) {
         route._stepsSyncPending = true;
         saveState();
         const prev = stepsSyncQueue.get(route.id) || Promise.resolve();
-        const next = prev.catch(() => {}).then(() =>
-          fetch(`${API_BASE}/api/routes/${encodeURIComponent(route.id)}/steps`, {
-            method: 'PUT',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              steps: route.steps,
-              user_id: state.user.id,
-              user_name: state.user.name,
-              avatar: getAvatarDisplay(state.user.name),
-              action,
-            }),
-          })
-            .then((res) => {
+        // Retries in-session (0s / 2s / 5s backoff) before giving up for now - most failures here
+        // are a brief mobile signal drop, not a permanent one, so a short retry window clears the
+        // large majority of them without waiting for the next app open. _stepsSyncPending staying
+        // true until a 2xx comes back is still the real safety net for the rest (see comment above).
+        const next = prev.catch(() => {}).then(async () => {
+          const RETRY_DELAYS_MS = [0, 2000, 5000];
+          let lastFailure = null;
+          for (const delay of RETRY_DELAYS_MS) {
+            if (delay) await sleep(delay);
+            try {
+              const res = await fetch(`${API_BASE}/api/routes/${encodeURIComponent(route.id)}/steps`, {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  steps: route.steps,
+                  user_id: state.user.id,
+                  user_name: state.user.name,
+                  avatar: getAvatarDisplay(state.user.name),
+                  action,
+                }),
+              });
               if (res.ok) {
                 route._stepsSyncPending = false;
                 saveState();
-              } else {
-                console.warn('[steps sync failed]', route.id, res.status);
+                return;
               }
-            })
-            .catch((err) => {
-              console.warn('[steps sync failed]', route.id, err);
-            })
-        );
+              lastFailure = { phase: 'http_error', detail: `HTTP ${res.status}` };
+            } catch (err) {
+              lastFailure = { phase: 'network_error', detail: err && err.message };
+            }
+          }
+          console.warn('[steps sync failed]', route.id, lastFailure);
+          if (lastFailure) logSyncErrorToServer(route, action, lastFailure.phase, lastFailure.detail);
+        });
         stepsSyncQueue.set(route.id, next);
         return next;
       }

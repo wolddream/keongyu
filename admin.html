@@ -113,6 +113,7 @@
           <button class="nav-item" data-tab="dashboard">📊 대시보드</button>
           <button class="nav-item" data-tab="routes">🗺️ 루트 관리</button>
           <button class="nav-item" data-tab="reports">🚨 신고 관리</button>
+          <button class="nav-item" data-tab="syncerrors">🛰️ 동기화 오류</button>
           <button class="nav-item" data-tab="users">👤 사용자 관리</button>
           <button class="nav-item" data-tab="payments">💰 결제/별사탕</button>
           <button class="nav-item" data-tab="collab">👥 함께가기</button>
@@ -239,6 +240,35 @@
         renderTab('reports');
       }
 
+      // 3-2. 동기화 오류: D1 sync_errors 테이블 (X-ADMIN-TOKEN 필요) - 클라이언트의 fire-and-forget
+      // steps 저장(PUT)이 실패할 때마다 index.html의 logSyncErrorToServer()가 여기 기록을 남긴다.
+      // "경유지가 사라진다" 류의 동기화 버그가 재발하는지 사용자 스크린샷 없이 확인하는 용도.
+      let syncErrors = [];
+      let syncErrorsLoading = false;
+      let syncErrorsError = null;
+
+      async function fetchSyncErrors() {
+        try {
+          const res = await fetch(`${ADMIN_API_BASE}/api/admin/sync-errors`, {
+            headers: { 'X-ADMIN-TOKEN': adminToken }
+          });
+          if (!res.ok) throw new Error('request failed');
+          const data = await res.json();
+          syncErrors = data.errors || [];
+          syncErrorsError = null;
+        } catch (e) {
+          syncErrorsError = '동기화 오류 목록을 불러오지 못했습니다. 네트워크를 확인해주세요.';
+        }
+      }
+
+      async function loadSyncErrorsTab() {
+        syncErrorsLoading = true;
+        renderTab('syncerrors');
+        await fetchSyncErrors();
+        syncErrorsLoading = false;
+        renderTab('syncerrors');
+      }
+
       function formatDateTime(sqlDatetime) {
         if (!sqlDatetime) return '—';
         const d = new Date(sqlDatetime.replace(' ', 'T') + 'Z'); // D1 CURRENT_TIMESTAMP는 UTC
@@ -280,6 +310,7 @@
           dashboard: renderDashboard,
           routes: renderRoutes,
           reports: renderReports,
+          syncerrors: renderSyncErrors,
           users: renderUsers,
           payments: renderPayments,
           collab: renderCollab,
@@ -401,6 +432,45 @@
             </table>
             <!-- 참고: 신고 접수(POST) UI는 메인 앱(index.html)에 아직 없어 이 큐는 실제 운영에서
                  계속 비어있을 수 있습니다 - "신고하기" 버튼을 메인 앱에 추가하는 건 별도 작업입니다. -->
+          </div>
+        `;
+      }
+
+      function renderSyncErrors() {
+        const routes = getRoutes();
+        let body;
+        if (syncErrorsLoading) {
+          body = `<tr class="empty-row"><td colspan="6">불러오는 중...</td></tr>`;
+        } else if (syncErrorsError) {
+          body = `<tr class="empty-row"><td colspan="6">${esc(syncErrorsError)}</td></tr>`;
+        } else if (syncErrors.length === 0) {
+          body = `<tr class="empty-row"><td colspan="6">동기화 오류 기록이 없습니다.</td></tr>`;
+        } else {
+          body = syncErrors.map(e => {
+            const route = routes.find(r => r.id === e.route_id);
+            return `
+              <tr>
+                <td><span class="chip">${esc(e.route_id)}</span>${route ? ` <span style="color:var(--text-sub); font-size:11px;">(${esc(route.title)})</span>` : ''}</td>
+                <td>${esc(e.action || '—')}</td>
+                <td><span class="badge ${e.phase === 'network_error' ? 'private' : 'normal'}">${esc(e.phase)}</span></td>
+                <td style="max-width:280px; overflow-wrap:anywhere;">${esc(e.detail || '—')}</td>
+                <td>${esc(e.user_id || '—')}</td>
+                <td>${formatDateTime(e.created_at)}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+        return `
+          <h1>🛰️ 동기화 오류</h1>
+          <div class="subtitle">최근 저장 실패 기록 ${syncErrorsLoading ? '—' : syncErrors.length}건 (D1 sync_errors 테이블, keongyu-api 실시간 연동)</div>
+          <div class="panel">
+            <table>
+              <thead><tr><th>루트 ID</th><th>액션</th><th>단계</th><th>상세</th><th>사용자</th><th>시간</th></tr></thead>
+              <tbody>${body}</tbody>
+            </table>
+            <!-- 경유지 추가/수정 저장(PUT .../steps)이 재시도 후에도 최종 실패하면 index.html의
+                 syncStepsToServer()가 여기 기록을 남긴다. 같은 route_id가 반복해서 쌓이면 그 사용자의
+                 네트워크 환경이 특히 불안정하다는 신호. -->
           </div>
         `;
       }
@@ -657,6 +727,7 @@
         document.querySelectorAll('#sidebar-nav .nav-item').forEach(btn => {
           btn.addEventListener('click', () => {
             if (btn.dataset.tab === 'reports') loadReportsTab();
+            else if (btn.dataset.tab === 'syncerrors') loadSyncErrorsTab();
             else renderTab(btn.dataset.tab);
           });
         });
