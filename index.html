@@ -2230,6 +2230,8 @@
           gps: null,
           gpsLoading: false,
           gpsError: null,
+          nearbyPlaces: [],
+          nearbyLoading: false,
           cameraOpen: false,
           cameraFacing: 'environment',
           cameraError: null
@@ -2377,6 +2379,7 @@
               editor.address = addrInput.value;
             }
             render();
+            fetchNearbyPlaces(editor, latitude, longitude);
           },
           err => {
             editor.gpsLoading = false;
@@ -2389,9 +2392,45 @@
         );
       };
 
+      // GPS로 찍은 좌표 주변의 실제 장소 목록을 보여줘서, 이름/주소를 직접 타이핑하지 않고 골라서
+      // 자동입력할 수 있게 한다 (사용자 요청: 텍스트 입력 최소화). 실패해도 GPS 좌표 자체는 이미
+      // 채워져 있으니 조용히 목록만 비워두고 넘어간다 - 필수 기능이 아니라 있으면 편한 보조 기능.
+      function fetchNearbyPlaces(editor, lat, lng) {
+        editor.nearbyLoading = true;
+        editor.nearbyPlaces = [];
+        render();
+        fetch(`${API_BASE}/api/kakao/nearby-places?lat=${lat}&lng=${lng}`)
+          .then(res => res.ok ? res.json() : { places: [] })
+          .then(data => {
+            if (state.ui.stopEditor !== editor) return;
+            editor.nearbyLoading = false;
+            editor.nearbyPlaces = data.places || [];
+            render();
+          })
+          .catch(() => {
+            if (state.ui.stopEditor !== editor) return;
+            editor.nearbyLoading = false;
+            render();
+          });
+      }
+
+      window.selectNearbyPlace = function(index) {
+        const editor = state.ui.stopEditor;
+        if (!editor || !editor.nearbyPlaces || !editor.nearbyPlaces[index]) return;
+        const place = editor.nearbyPlaces[index];
+        editor.name = place.name;
+        editor.address = place.address;
+        editor.category = place.category;
+        editor.emoji = place.emoji;
+        editor.gps = { lat: place.lat, lng: place.lng, accuracy: 0, formattedText: `${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}` };
+        editor.nearbyPlaces = [];
+        render();
+      };
+
       window.clearStopEditorGps = function() {
         if (!state.ui.stopEditor) return;
         state.ui.stopEditor.gps = null;
+        state.ui.stopEditor.nearbyPlaces = [];
         render();
       };
 
@@ -5405,6 +5444,22 @@
                     </div>
                   ` : ''}
                   ${se.gpsError ? `<div style="font-size:11px; color:#E4572E; margin-top:4px;">${esc(se.gpsError)}</div>` : ''}
+                  ${se.nearbyLoading ? `<div style="font-size:11px; color:var(--text-sub); margin-top:6px;">주변 장소 찾는 중...</div>` : ''}
+                  ${(se.nearbyPlaces && se.nearbyPlaces.length && !se.nearbyLoading) ? `
+                    <div style="margin-top:8px; display:flex; flex-direction:column; gap:5px;">
+                      <div style="font-size:11px; font-weight:800; color:var(--text-sub);">📍 근처 장소 (눌러서 이름·주소 자동입력)</div>
+                      ${se.nearbyPlaces.map((p, i) => `
+                        <button type="button" onclick="selectNearbyPlace(${i})" style="width:100%; text-align:left; display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:10px; border:1px solid var(--border); background:#FFF; font-family:inherit; cursor:pointer;">
+                          <span style="font-size:16px; flex-shrink:0;">${p.emoji}</span>
+                          <span style="flex:1; min-width:0;">
+                            <div style="font-size:12px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(p.name)}</div>
+                            <div style="font-size:10.5px; color:var(--text-sub); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(p.address)}</div>
+                          </span>
+                          <span style="font-size:10px; color:var(--primary); font-weight:800; flex-shrink:0;">${p.distance}m</span>
+                        </button>
+                      `).join('')}
+                    </div>
+                  ` : ''}
                 </div>
 
                 <div style="padding:12px; border-radius:16px; background:#F8F8F6; border:1px solid var(--border); display:flex; flex-direction:column; gap:8px;">

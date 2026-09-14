@@ -41,6 +41,7 @@
  *   PATCH /api/admin/reports/:id           -> mark a report resolved + admin_logs entry (X-ADMIN-TOKEN required)
  *   POST /api/sync-errors                  -> client beacon: records a failed fire-and-forget sync (steps PUT, etc.)
  *   GET  /api/admin/sync-errors            -> list recent sync failures (X-ADMIN-TOKEN required)
+ *   GET  /api/kakao/nearby-places?lat=&lng=&radius= -> nearby real places (경유지 추가 GPS 버튼 - 텍스트 입력 최소화용)
  *
  * Bindings (wrangler.jsonc): DB (D1), IMAGES (R2)
  * Secrets (wrangler secret put): TURNSTILE_SECRET_KEY, KAKAO_REST_API_KEY, (optional) KAKAO_CLIENT_SECRET,
@@ -64,6 +65,7 @@ import { handleGetDecoItems, handleGetDecoInventory, handleBuyDecoItem, handleRa
 import { handleGetRouteSkinItems, handleGetRouteSkinInventory, handleBuyRouteSkinItem } from "./routeSkin";
 import { handleSendGift, handleGetGiftbox, handleMarkGiftboxRead } from "./candy";
 import { handleLogSyncError, handleGetSyncErrors } from "./syncErrors";
+import { handleGetNearbyPlaces } from "./kakaoPlaces";
 
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
@@ -210,6 +212,9 @@ export default {
 			}
 			if (url.pathname === "/api/admin/sync-errors" && request.method === "GET") {
 				return cors(await handleGetSyncErrors(request, env));
+			}
+			if (url.pathname === "/api/kakao/nearby-places" && request.method === "GET") {
+				return cors(await handleGetNearbyPlaces(request, env));
 			}
 		} catch (err) {
 			return cors(json({ error: (err as Error).message }, 500));
