@@ -3321,6 +3321,52 @@
         host.appendChild(btn);
       }
 
+      // "내 위치 보기" 버튼 - GPS 체크인/경유지 GPS 조회와 같은 절충으로, 실시간 추적(watchPosition)
+      // 대신 누를 때마다 한 번만 찍어서 배터리 소모 없이 보여준다. overlayRef({current: overlay|null})는
+      // 호출부(drawRouteMap/ensureFullscreenRouteMap)가 지도를 다시 그릴 때마다 새로 만들어 넘기고,
+      // 버튼을 다시 누르면 이전 점을 지우고 새로 찍어 지도 위에 점이 계속 쌓이지 않게 한다.
+      function appendMyLocationButton(host, map, kakao, overlayRef, rightOffset) {
+        const btn = document.createElement('button');
+        btn.className = 'icon-btn';
+        btn.title = '내 위치 보기';
+        btn.style.cssText = `position:absolute; top:8px; right:${rightOffset}px; z-index:5; width:30px; height:30px; font-size:14px; background:rgba(255,255,255,0.92);`;
+        btn.textContent = '📍';
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          if (!navigator.geolocation) {
+            showToast('이 브라우저에서는 위치 기능을 지원하지 않아요.');
+            return;
+          }
+          btn.disabled = true;
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              btn.disabled = false;
+              const { latitude, longitude } = pos.coords;
+              const position = new kakao.maps.LatLng(latitude, longitude);
+              if (overlayRef.current) overlayRef.current.setMap(null);
+              overlayRef.current = new kakao.maps.CustomOverlay({
+                map,
+                position,
+                zIndex: 10,
+                content: '<div style="width:14px; height:14px; border-radius:50%; background:#4285F4; border:3px solid #FFF; box-shadow:0 0 4px rgba(0,0,0,0.4);"></div>',
+              });
+              map.panTo(position);
+            },
+            (err) => {
+              btn.disabled = false;
+              showToast(err.code === err.PERMISSION_DENIED
+                ? '위치 접근 권한이 거부되었습니다. 브라우저 설정에서 위치 권한을 허용해주세요.'
+                : '현재 GPS 신호를 가져올 수 없습니다. 잠시 후 다시 시도해주세요.');
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+          );
+        };
+        host.appendChild(btn);
+      }
+
+      let _routeMapMyLocationRef = { current: null };
+      let _fullscreenMapMyLocationRef = { current: null };
+
       function drawRouteMap(host, route, gpsSteps) {
         const kakao = window.kakao;
         const center = new kakao.maps.LatLng(gpsSteps[0].gps.lat, gpsSteps[0].gps.lng);
@@ -3328,6 +3374,8 @@
         _routeMapInstance = map;
         _routeMapOverlays = paintRouteMap(kakao, map, host, route, gpsSteps);
         appendMapExpandButton(host, route.id);
+        _routeMapMyLocationRef = { current: null };
+        appendMyLocationButton(host, map, kakao, _routeMapMyLocationRef, 46);
       }
 
       // ==========================================
@@ -3383,6 +3431,8 @@
           const map = new kakao.maps.Map(host, { center, level: 6 });
           _fullscreenMapInstance = map;
           paintRouteMap(kakao, map, host, route, gpsSteps);
+          _fullscreenMapMyLocationRef = { current: null };
+          appendMyLocationButton(host, map, kakao, _fullscreenMapMyLocationRef, 8);
         }).catch(err => {
           console.warn('[route-map-fullscreen]', err);
           host.innerHTML = `<div style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-sub); font-size:13px;">지도를 불러오지 못했어요</div>`;
