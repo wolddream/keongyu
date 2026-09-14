@@ -855,14 +855,30 @@
       // Replaces the whole steps list server-side after any local add/update/delete-step mutation -
       // see keongyu-api's PUT /api/routes/:id/steps for why (a full-array replace instead of trying
       // to keep server-side step_order in sync with individual inserts/deletes).
+      //
+      // Queued per route instead of fired directly: apiJson/apiSync is fire-and-forget with no
+      // ordering guarantee, so two calls issued close together (e.g. adding two waypoints back to
+      // back) could reach the Worker out of order over a flaky connection. Since this is a full
+      // replace, whichever PUT lands LAST wins - if the one carrying fewer steps arrives after the
+      // one with more, it silently wipes out the newer waypoint(s) (the "경유지가 자꾸 없어져" bug).
+      // Chaining onto the previous call's promise guarantees only one PUT for a route is in flight
+      // at a time, so they always land in the order they were sent. Reading route.steps lazily
+      // inside the .then() (not at call time) also means a still-queued call always sends the
+      // latest snapshot when it finally runs, instead of a now-stale one it captured earlier.
+      const stepsSyncQueue = new Map();
       function syncStepsToServer(route, action) {
-        apiJson(`/api/routes/${encodeURIComponent(route.id)}/steps`, 'PUT', {
-          steps: route.steps,
-          user_id: state.user.id,
-          user_name: state.user.name,
-          avatar: getAvatarDisplay(state.user.name),
-          action,
-        });
+        const prev = stepsSyncQueue.get(route.id) || Promise.resolve();
+        const next = prev.catch(() => {}).then(() =>
+          apiJson(`/api/routes/${encodeURIComponent(route.id)}/steps`, 'PUT', {
+            steps: route.steps,
+            user_id: state.user.id,
+            user_name: state.user.name,
+            avatar: getAvatarDisplay(state.user.name),
+            action,
+          })
+        );
+        stepsSyncQueue.set(route.id, next);
+        return next;
       }
 
       function syncRoutePatchToServer(route) {
