@@ -762,7 +762,21 @@
           const data = await res.json();
           const serverRoutes = (data.routes || []).map(mapServerRouteToClient);
           const localOnly = state.routes.filter((r) => !r.fromServer);
-          state.routes = [...serverRoutes, ...localOnly];
+          const localById = new Map(state.routes.filter((r) => r.fromServer).map((r) => [r.id, r]));
+          // A route whose last steps-edit never got server-confirmed (see syncStepsToServer) still
+          // has the newer/more-complete list only in local state. Trusting the server's answer here
+          // would silently erase that edit on every future load - keep the local steps and retry the
+          // push instead of overwriting.
+          const merged = serverRoutes.map((sr) => {
+            const local = localById.get(sr.id);
+            if (local && local._stepsSyncPending) {
+              const kept = { ...sr, steps: local.steps };
+              syncStepsToServer(kept, '재동기화');
+              return kept;
+            }
+            return sr;
+          });
+          state.routes = [...merged, ...localOnly];
           saveState();
           render();
         } catch (err) {
@@ -865,17 +879,42 @@
       // at a time, so they always land in the order they were sent. Reading route.steps lazily
       // inside the .then() (not at call time) also means a still-queued call always sends the
       // latest snapshot when it finally runs, instead of a now-stale one it captured earlier.
+      //
+      // route._stepsSyncPending marks a PUT that hasn't been server-confirmed yet (stays true across
+      // app restarts via saveState/localStorage). Without it, a PUT that silently fails - weak
+      // signal, tab closed/backgrounded mid-request, no retry anywhere in this fire-and-forget
+      // pattern - leaves the LOCAL state correct but the server stuck on the old, shorter list. The
+      // next time the app opens, syncRoutesFromServer() below would otherwise trust that stale
+      // server list and overwrite the correct local one, which is what made added waypoints
+      // "disappear after some time" even for a single user on a single device.
       const stepsSyncQueue = new Map();
       function syncStepsToServer(route, action) {
+        route._stepsSyncPending = true;
+        saveState();
         const prev = stepsSyncQueue.get(route.id) || Promise.resolve();
         const next = prev.catch(() => {}).then(() =>
-          apiJson(`/api/routes/${encodeURIComponent(route.id)}/steps`, 'PUT', {
-            steps: route.steps,
-            user_id: state.user.id,
-            user_name: state.user.name,
-            avatar: getAvatarDisplay(state.user.name),
-            action,
+          fetch(`${API_BASE}/api/routes/${encodeURIComponent(route.id)}/steps`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              steps: route.steps,
+              user_id: state.user.id,
+              user_name: state.user.name,
+              avatar: getAvatarDisplay(state.user.name),
+              action,
+            }),
           })
+            .then((res) => {
+              if (res.ok) {
+                route._stepsSyncPending = false;
+                saveState();
+              } else {
+                console.warn('[steps sync failed]', route.id, res.status);
+              }
+            })
+            .catch((err) => {
+              console.warn('[steps sync failed]', route.id, err);
+            })
         );
         stepsSyncQueue.set(route.id, next);
         return next;
